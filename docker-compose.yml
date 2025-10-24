@@ -1,16 +1,14 @@
 version: "3.9"
-
 services:
   peptrackr:
     build:
-      context: .               # repo root
+      context: .
       dockerfile: Dockerfile
-    image: peptrackr:v17       # tagged locally on the node
+    image: peptrackr:v17.1
     ports:
       - "8085:80"
     restart: unless-stopped
     volumes:
       - peptrackr_data:/data
-
 volumes:
   peptrackr_data:
