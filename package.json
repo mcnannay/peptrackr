@@ -1,8 +1,8 @@
 {
   "name": "peptrackr",
-  "version": "16.6.0",
-  "type": "module",
+  "version": "17.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
