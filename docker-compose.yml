@@ -4,7 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: peptrackr:v17.3.1
+      args:
+        NO_CACHE_BUSTER: "force-2025-10-24T-1"
+    image: peptrackr:v17.3.2
     ports:
       - "8085:80"
     restart: unless-stopped
