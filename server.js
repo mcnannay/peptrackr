@@ -18,19 +18,17 @@ await fs.mkdir(DATA_DIR, { recursive: true });
 const usersFile = path.join(DATA_DIR, 'users.json');
 async function readUsers() {
   try { return JSON.parse(await fs.readFile(usersFile, 'utf-8')); }
-  catch { 
+  catch {
     const init = { users: [{ id: 'default', name: 'Default' }], defaultId: 'default' };
     await fs.writeFile(usersFile, JSON.stringify(init, null, 2));
     return init;
   }
 }
-async function writeUsers(obj) {
-  await fs.writeFile(usersFile, JSON.stringify(obj, null, 2));
-}
+async function writeUsers(obj) { await fs.writeFile(usersFile, JSON.stringify(obj, null, 2)); }
 function userFile(id) { return path.join(DATA_DIR, `user_${id}.json`); }
 async function readUserData(id) {
   try { return JSON.parse(await fs.readFile(userFile(id), 'utf-8')); }
-  catch { 
+  catch {
     const empty = {
       theme: 'dark',
       meds: [],
@@ -57,7 +55,6 @@ app.get('/api/users', async (req, res) => {
   const data = await readUsers();
   res.json(data);
 });
-
 app.post('/api/users', async (req, res) => {
   const { name } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
@@ -65,18 +62,16 @@ app.post('/api/users', async (req, res) => {
   const id = (name.toLowerCase().replace(/[^a-z0-9]+/g,'-') || 'user') + '-' + Date.now().toString(36);
   usersObj.users.push({ id, name: String(name).trim() });
   await writeUsers(usersObj);
-  // Initialize data file
   await writeUserData(id, await readUserData(id));
   res.json({ ok: true, id });
 });
 
-// API: Per-user data blob (get/put)
+// API: Per-user data
 app.get('/api/data', async (req, res) => {
   const id = req.query.user || (await readUsers()).defaultId;
   const data = await readUserData(id);
   res.json({ user: id, data });
 });
-
 app.put('/api/data', async (req, res) => {
   const id = req.query.user;
   if (!id) return res.status(400).json({ error: 'user query param required' });
