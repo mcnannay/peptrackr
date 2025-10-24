@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     image: peptrackr:latest
     ports:
-      - "8080:80"
+      - "8085:80"
     restart: unless-stopped
     volumes:
       - peptrackr_data:/data
