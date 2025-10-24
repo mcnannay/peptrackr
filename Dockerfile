@@ -5,7 +5,7 @@ WORKDIR /app
 ENV NODE_OPTIONS=--max-old-space-size=1024     NPM_CONFIG_FUND=false     NPM_CONFIG_AUDIT=false
 
 COPY package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN npm install
 
 COPY . .
 RUN npm run build
@@ -16,7 +16,7 @@ WORKDIR /app
 ENV NODE_ENV=production DATA_DIR=/data
 
 COPY package*.json ./
-RUN npm ci --omit=dev || npm install --omit=dev
+RUN npm install --omit=dev
 
 COPY --from=build /app/dist ./dist
 COPY server.js ./server.js
