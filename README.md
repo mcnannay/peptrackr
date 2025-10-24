@@ -1,16 +1,12 @@
-# PepTrackr v17.4 — Pull-only deploy via Portainer
+# PepTrackr v17.5 — Portainer deploy with NO npm in Portainer
 
-This repo ships with a GitHub Action that **builds & pushes** a Docker image to **GHCR** so Portainer never runs npm.
-The app includes server-side persistence (/data) and multi-user support.
-
-## Push to GitHub
-1. Create repo (e.g. `mcnannay/peptrackr`), upload all files (keep `.github/workflows/docker.yml`).
-2. Push to `main`. The Action builds & publishes:
+## What you do
+1) Create a GitHub repo (e.g., `mcnannay/peptrackr`) and upload everything in this folder (keep `.github/workflows/docker.yml`).
+2) Push to `main`. GitHub Actions builds and publishes to GHCR:
    - `ghcr.io/mcnannay/peptrackr:latest`
-   - `ghcr.io/mcnannay/peptrackr:v17.4`
+3) In Portainer → Stacks → Web editor, paste **docker-compose.web.yml** (or use Repository mode pointing to `docker-compose.yml`). This **pulls** the image; Portainer does **not** build or run npm.
 
-## Portainer — Web editor (no build)
-Paste `docker-compose.web.yml` or:
+## Portainer Web editor compose
 ```yaml
 version: "3.9"
 services:
@@ -24,13 +20,7 @@ services:
 volumes:
   peptrackr_data:
 ```
-If GHCR is private, add a GHCR registry in Portainer and use your PAT.
 
-## Portainer — Repository mode (still no build)
-Use `docker-compose.yml` (pull-only). Portainer will just pull `ghcr.io/mcnannay/peptrackr:latest`.
+If your GHCR package is private, add GHCR in Portainer Registries and deploy with those credentials.
 
-## Local dev
-```bash
-npm install
-npm run dev
-```
+Data persists in the Docker volume `peptrackr_data` at `/data` inside the container.
