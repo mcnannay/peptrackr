@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   peptrackr:
-    image: ghcr.io/mcnannay/peptrackr:latest
+    image: ghcr.io/mcnannay/peptrackr:v17.3
     ports:
       - "8085:80"
     restart: unless-stopped

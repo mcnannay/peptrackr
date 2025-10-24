@@ -4,9 +4,11 @@ WORKDIR /app
 
 ENV NODE_OPTIONS=--max-old-space-size=1024     NPM_CONFIG_FUND=false     NPM_CONFIG_AUDIT=false
 
+# Install deps first for caching
 COPY package*.json ./
 RUN npm install
 
+# Copy app and build
 COPY . .
 RUN npm run build
 
