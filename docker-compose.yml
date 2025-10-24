@@ -4,11 +4,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: peptrackr:latest
+    image: peptrackr:v17
     ports:
       - "8085:80"
     restart: unless-stopped
     volumes:
       - peptrackr_data:/data
+
 volumes:
   peptrackr_data:
