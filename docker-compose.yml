@@ -1,12 +1,7 @@
 version: "3.9"
 services:
   peptrackr:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        NO_CACHE_BUSTER: "force-2025-10-24T-1"
-    image: peptrackr:v17.3.2
+    image: ghcr.io/mcnannay/peptrackr:latest
     ports:
       - "8085:80"
     restart: unless-stopped
