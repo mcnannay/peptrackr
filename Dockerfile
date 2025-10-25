@@ -5,18 +5,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends     python3 bui
 
 WORKDIR /app/client
 
-# Copy manifests first for caching and support npm/yarn/pnpm
-COPY client/package.json ./
-COPY client/package-lock.json ./ 2>/dev/null || true
-COPY client/yarn.lock ./ 2>/dev/null || true
-COPY client/pnpm-lock.yaml ./ 2>/dev/null || true
+# Bring the whole client so detection (yarn/pnpm/npm) works without tricky COPY conditionals
+COPY client/ ./
 
-# Always enable Corepack (for yarn/pnpm), but DO NOT use `npm ci` at all.
+# Enable Corepack (yarn/pnpm) and pick the right manager; be tolerant of lockfile issues
 RUN corepack enable || true &&     if [ -f pnpm-lock.yaml ]; then       corepack pnpm install --frozen-lockfile || corepack pnpm install;     elif [ -f yarn.lock ]; then       corepack yarn install --frozen-lockfile || corepack yarn install;     else       npm install --no-audit --no-fund --legacy-peer-deps;     fi
 
-# Now bring in the rest of the client and build
-COPY client/ ./
-# In case the package manager is yarn/pnpm, try those first; fall back to npm
+# Build with whichever manager exists
 RUN (corepack pnpm -v >/dev/null 2>&1 && corepack pnpm run build) ||     (corepack yarn -v >/dev/null 2>&1 && corepack yarn build) ||     npm run build
 
 # ---------- Runtime: tiny server with persistent storage ----------
