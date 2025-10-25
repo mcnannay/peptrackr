@@ -1,2 +1,0 @@
-index.html root ok: True
-duplicate functions: add
