@@ -5,14 +5,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends     python3 bui
 
 WORKDIR /app/client
 
-# Bring the whole client so detection (yarn/pnpm/npm) works without tricky COPY conditionals
+# Copy client first and install with npm only (tolerant flags)
 COPY client/ ./
+RUN npm install --no-audit --no-fund --legacy-peer-deps --unsafe-perm
 
-# Enable Corepack (yarn/pnpm) and pick the right manager; be tolerant of lockfile issues
-RUN corepack enable || true &&     if [ -f pnpm-lock.yaml ]; then       corepack pnpm install --frozen-lockfile || corepack pnpm install;     elif [ -f yarn.lock ]; then       corepack yarn install --frozen-lockfile || corepack yarn install;     else       npm install --no-audit --no-fund --legacy-peer-deps;     fi
-
-# Build with whichever manager exists
-RUN (corepack pnpm -v >/dev/null 2>&1 && corepack pnpm run build) ||     (corepack yarn -v >/dev/null 2>&1 && corepack yarn build) ||     npm run build
+# Ensure a build command exists; if not, try vite directly
+# 1) Try package.json "build", else 2) npx vite build (install vite if missing)
+RUN npm run build || (npx --yes vite --version >/dev/null 2>&1 || npm install -D vite@5) && npx --yes vite build
 
 # ---------- Runtime: tiny server with persistent storage ----------
 FROM node:20-bullseye
