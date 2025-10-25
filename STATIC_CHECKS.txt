@@ -1,2 +1,2 @@
-Duplicate functions: none
-Root div OK: True
+index.html root ok: True
+duplicate functions: add

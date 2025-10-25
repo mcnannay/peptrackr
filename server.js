@@ -13,14 +13,8 @@ const DATA_FILE = path.join(DATA_DIR, 'data.json')
 function ensureData(){
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, {recursive:true})
   if (!fs.existsSync(DATA_FILE)){
-    const seed = {
-      users: [{id:'u1', name:'You', sex:'M', heightCm:180}],
-      currentUserId: 'u1',
-      meds: [],
-      shots: [],
-      weights: []
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(seed, null, 2))
+    const seed = { users:[{id:'u1',name:'You',sex:'M',heightCm:180}], currentUserId:'u1', meds:[], shots:[], weights:[] }
+    fs.writeFileSync(DATA_FILE, JSON.stringify(seed,null,2))
   }
 }
 function load(){ ensureData(); return JSON.parse(fs.readFileSync(DATA_FILE,'utf-8')) }
@@ -28,13 +22,7 @@ function save(obj){ fs.writeFileSync(DATA_FILE, JSON.stringify(obj, null, 2)) }
 
 app.use(express.json())
 
-// Avoid stale SPA shell
-app.get('/', (req,res,next)=>{
-  res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')
-  res.set('Pragma','no-cache'); res.set('Expires','0'); next()
-})
-
-// ---- API ----
+// Health
 app.get('/api/health', (req,res)=>res.json({ok:true, version:'v16.5.2+server'}))
 
 // Users
@@ -70,51 +58,20 @@ app.post('/api/users/:id/select', (req,res)=>{
   db.currentUserId = req.params.id; save(db); res.json({ok:true})
 })
 
-// Meds
-app.get('/api/meds', (req,res)=>{ const db=load(); res.json({meds: db.meds}) })
-app.post('/api/meds', (req,res)=>{
-  const {name, halfLifeHours, everyDays=7, color='#60a5fa', ka=1.0, enabled=true} = req.body||{}
-  if (!name) return res.status(400).json({error:'name required'})
-  const db=load(); const id='m'+Math.random().toString(36).slice(2,8)
-  db.meds.push({id, name, halfLifeHours:Number(halfLifeHours)||24, everyDays:Number(everyDays)||7, color, ka:Number(ka)||1.0, enabled: !!enabled})
-  save(db); res.json({id})
+// Sync (bulk meds/shots/weights) so we don't rewrite your handlers
+app.get('/api/sync', (req,res)=>{
+  const db=load(); res.json({ meds:db.meds, shots:db.shots, weights:db.weights })
 })
-app.put('/api/meds/:id', (req,res)=>{
-  const db=load(); const m = db.meds.find(x=>x.id===req.params.id); if (!m) return res.status(404).json({error:'not found'})
-  const {name, halfLifeHours, everyDays, color, ka, enabled} = req.body||{}
-  if (name!=null) m.name=name
-  if (halfLifeHours!=null) m.halfLifeHours=Number(halfLifeHours)
-  if (everyDays!=null) m.everyDays=Number(everyDays)
-  if (color!=null) m.color=color
-  if (ka!=null) m.ka=Number(ka)
-  if (enabled!=null) m.enabled=!!enabled
+app.post('/api/sync', (req,res)=>{
+  const db=load()
+  const { meds, shots, weights } = req.body||{}
+  if (Array.isArray(meds)) db.meds = meds
+  if (Array.isArray(shots)) db.shots = shots
+  if (Array.isArray(weights)) db.weights = weights
   save(db); res.json({ok:true})
 })
-app.delete('/api/meds/:id', (req,res)=>{
-  const db=load(); const i=db.meds.findIndex(x=>x.id===req.params.id); if (i<0) return res.status(404).json({error:'not found'})
-  db.meds.splice(i,1); save(db); res.json({ok:true})
-})
 
-// Shots
-app.get('/api/shots', (req,res)=>{ const db=load(); res.json({shots: db.shots}) })
-app.post('/api/shots', (req,res)=>{
-  const {userId, medId, dateISO, mg} = req.body||{}
-  if (!userId || !medId || !dateISO || mg==null) return res.status(400).json({error:'userId, medId, dateISO, mg required'})
-  const db=load(); const id='s'+Math.random().toString(36).slice(2,8)
-  db.shots.push({id, userId, medId, atISO:dateISO, dose:Number(mg)})
-  save(db); res.json({id})
-})
-
-// Weights
-app.get('/api/weights', (req,res)=>{ const db=load(); res.json({weights: db.weights}) })
-app.post('/api/weights', (req,res)=>{
-  const {userId, dateISO, kg} = req.body||{}
-  if (!userId || !dateISO || kg==null) return res.status(400).json({error:'userId, dateISO, kg required'})
-  const db=load(); const id='w'+Math.random().toString(36).slice(2,8)
-  db.weights.push({id, userId, atISO:dateISO, kg:Number(kg)}); save(db); res.json({id})
-})
-
-// Static assets
+// Static (serve built app)
 app.use(express.static(path.join(__dirname,'dist'), { maxAge:'1d', etag:true }))
 app.get('*',(req,res)=>{
   res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')

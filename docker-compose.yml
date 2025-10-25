@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: peptrackr:v16.6.0
+    image: peptrackr:v16.5.2-serverusers
     ports:
       - "8085:80"
     restart: unless-stopped
