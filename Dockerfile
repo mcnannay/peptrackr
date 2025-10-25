@@ -1,20 +1,28 @@
-# ---- Build stage ----
-FROM node:20-bookworm-slim AS build
-WORKDIR /app
-ENV NODE_OPTIONS=--max-old-space-size=1024 NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false NPM_CONFIG_LEGACY_PEER_DEPS=true
-COPY package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci || npm install; else npm install; fi
-COPY . .
+# ---- Build client ----
+FROM node:20-bullseye AS builder
+WORKDIR /app/client
+COPY client/package.json client/package-lock.json* ./
+RUN npm ci --no-audit --no-fund
+COPY client/ ./
 RUN npm run build
 
-# ---- Runtime stage ----
-FROM node:20-bookworm-slim
+# ---- Runtime ----
+FROM node:20-bullseye
+ENV NODE_ENV=production
 WORKDIR /app
-ENV NODE_ENV=production DATA_DIR=/data
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/server.js ./server.js
-EXPOSE 80
+
+# Install server deps
+COPY server/package.json ./server/package.json
+RUN cd server && npm install --omit=dev --no-audit --no-fund
+
+# Copy server and built client
+COPY server/ ./server/
+COPY --from=builder /app/client/dist/ ./server/public/
+
+# Create data dir for persistence
 VOLUME ["/data"]
-CMD ["node","server.js"]
+ENV DATA_DIR=/data
+ENV PORT=8080
+
+EXPOSE 8080
+CMD ["node", "server/index.js"]
