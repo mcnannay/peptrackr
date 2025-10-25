@@ -1,27 +1,10 @@
-
 import React, { useEffect, useState } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend } from 'chart.js'
 import { Users, Meds, Shots, Weights } from './api'
 ChartJS.register(LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend)
 
-const clamp = (v,min,max)=>Math.max(min,Math.min(max,v))
 const fmtDate = d => new Date(d).toISOString().slice(0,10)
-
-function remainingFromDoses(doses, halfLifeDays, startDate, lengthDays){
-  const k = Math.log(2) / halfLifeDays
-  const out = []
-  for(let i=0;i<=lengthDays;i++){
-    const t = new Date(startDate); t.setDate(t.getDate()+i)
-    let mg = 0
-    for(const d of doses){
-      const dt = (t - new Date(d.date))/(1000*60*60*24)
-      if (dt >= 0){ mg += d.mg * Math.exp(-k*dt) }
-    }
-    out.push({ date: fmtDate(t), mg })
-  }
-  return out
-}
 
 const IconHome = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/></svg>)
 const IconSettings = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V22a2 2 0 1 1-4 0v-.07a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.07a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 6.02 3.3l.06.06c.48.48 1.17.62 1.82.33A1.65 1.65 0 0 0 9.41 2H9.5a2 2 0 1 1 4 0h.09a1.65 1.65 0 0 0 1.51 1c.65.29 1.34.15 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06c-.48.48-.62 1.17-.33 1.82.29.65.15 1.34-.33 1.82.48.48.62 1.17.33 1.82Z"/></svg>)
@@ -67,11 +50,8 @@ function WeightChart({ points }){
       tension:0.35
     }]
   }
-  const options = {
-    responsive:true,
-    plugins:{ legend:{ display:false } },
-    scales: { x:{ ticks:{ color:'#e5e7eb'}}, y:{ ticks:{ color:'#e5e7eb'}} }
-  }
+  const options = { responsive:true, plugins:{ legend:{ display:false } },
+    scales: { x:{ ticks:{ color:'#e5e7eb'}}, y:{ ticks:{ color:'#e5e7eb'}} } }
   return <div className="card chart-card"><Line data={data} options={options}/></div>
 }
 
@@ -132,7 +112,6 @@ export default function App(){
   const [shots,setShots] = useState([])
   const [weights,setWeights] = useState([])
 
-  // load server data
   useEffect(()=>{
     (async ()=>{
       try{
@@ -145,8 +124,6 @@ export default function App(){
   }, [])
 
   const currentUser = users.find(u=>u.id===currentUserId)
-
-  // Derived BMI from last weight of current user
   const userWeights = weights.filter(w=>w.userId===currentUserId).sort((a,b)=>a.date.localeCompare(b.date))
   const lastKg = userWeights[userWeights.length-1]?.kg || 90
   const heightM = (currentUser?.heightCm||180)/100
@@ -194,7 +171,7 @@ export default function App(){
     useEffect(()=>{ setHeight(currentUser?.heightCm||170) }, [currentUserId])
     async function addUser(){
       if (!name.trim()) return
-      const r = await Users.add(name.trim(), sex, Number(height)||170)
+      await Users.add(name.trim(), sex, Number(height)||170)
       const u = await Users.list(); setUsers(u.users); setCurrentUserId(u.currentUserId)
       setName('')
     }
@@ -235,7 +212,7 @@ export default function App(){
     <div className="container">
       <div className="header">
         <div className="brand"><div className="logo">PT</div> PepTrackr <span className="badge">{currentUser?.name || '—'}</span></div>
-        <div className="small">v16.5.3</div>
+        <div className="small">v16.6.0</div>
       </div>
       {tab==='home' && <Home/>}
       {tab==='settings' && <Settings/>}

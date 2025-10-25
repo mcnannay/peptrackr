@@ -1,4 +1,3 @@
-
 export async function api(path, opts={}){
   const res = await fetch(path, {
     headers: {'Content-Type':'application/json'},

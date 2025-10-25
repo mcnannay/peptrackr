@@ -1,4 +1,3 @@
-
 import express from 'express'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -7,6 +6,7 @@ import fs from 'fs'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const app = express()
+
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data')
 const DATA_FILE = path.join(DATA_DIR, 'data.json')
 
@@ -28,38 +28,36 @@ function save(obj){ fs.writeFileSync(DATA_FILE, JSON.stringify(obj, null, 2)) }
 
 app.use(express.json())
 
-// No-cache SPA shell
+// Avoid stale SPA shell caching
 app.get('/', (req,res,next)=>{
   res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')
   res.set('Pragma','no-cache'); res.set('Expires','0'); next()
 })
 
-// --- API --- //
-app.get('/api/health', (req,res)=>res.json({ok:true, version:'16.5.3'}))
+// ---- API ----
+app.get('/api/health', (req,res)=>res.json({ok:true, version:'16.6.0'}))
 
 // Users
-app.get('/api/users', (req,res)=>{ const db=load(); res.json({users:db.users, currentUserId: db.currentUserId}) })
+app.get('/api/users', (req,res)=>{ const db=load(); res.json({users:db.users, currentUserId:db.currentUserId}) })
 app.post('/api/users', (req,res)=>{
   const {name, sex='M', heightCm=170} = req.body||{}
   if (!name) return res.status(400).json({error:'name required'})
-  const db = load()
-  const id = 'u'+Math.random().toString(36).slice(2,8)
-  db.users.push({id, name, sex, heightCm})
+  const db = load(); const id = 'u'+Math.random().toString(36).slice(2,8)
+  db.users.push({id, name, sex, heightCm:Number(heightCm)||170})
   if (!db.currentUserId) db.currentUserId = id
-  save(db)
-  res.json({id})
+  save(db); res.json({id})
 })
 app.put('/api/users/:id', (req,res)=>{
-  const {id} = req.params; const {name, sex, heightCm} = req.body||{}
-  const db = load(); const u = db.users.find(x=>x.id===id)
+  const db=load(); const u = db.users.find(x=>x.id===req.params.id)
   if (!u) return res.status(404).json({error:'not found'})
+  const {name, sex, heightCm} = req.body||{}
   if (name!=null) u.name = name
   if (sex!=null) u.sex = sex
-  if (heightCm!=null) u.heightCm = heightCm
+  if (heightCm!=null) u.heightCm = Number(heightCm)
   save(db); res.json({ok:true})
 })
 app.delete('/api/users/:id', (req,res)=>{
-  const db = load(); const i = db.users.findIndex(x=>x.id===req.params.id)
+  const db=load(); const i = db.users.findIndex(x=>x.id===req.params.id)
   if (i<0) return res.status(404).json({error:'not found'})
   const removed = db.users.splice(i,1)[0]
   if (db.currentUserId===removed.id){
@@ -68,7 +66,7 @@ app.delete('/api/users/:id', (req,res)=>{
   save(db); res.json({ok:true})
 })
 app.post('/api/users/:id/select', (req,res)=>{
-  const db = load(); if (!db.users.some(u=>u.id===req.params.id)) return res.status(404).json({error:'not found'})
+  const db=load(); if (!db.users.some(u=>u.id===req.params.id)) return res.status(404).json({error:'not found'})
   db.currentUserId = req.params.id; save(db); res.json({ok:true})
 })
 
@@ -78,7 +76,7 @@ app.post('/api/meds', (req,res)=>{
   const {name, halfLifeDays, color='#60a5fa', cadenceDays=7, enabled=true} = req.body||{}
   if (!name) return res.status(400).json({error:'name required'})
   const db=load(); const id='m'+Math.random().toString(36).slice(2,8)
-  db.meds.push({id, name, halfLifeDays:Number(halfLifeDays)||7, color, cadenceDays:Number(cadenceDays)||7, enabled})
+  db.meds.push({id, name, halfLifeDays:Number(halfLifeDays)||7, color, cadenceDays:Number(cadenceDays)||7, enabled: !!enabled})
   save(db); res.json({id})
 })
 app.put('/api/meds/:id', (req,res)=>{
@@ -92,7 +90,7 @@ app.put('/api/meds/:id', (req,res)=>{
   save(db); res.json({ok:true})
 })
 app.delete('/api/meds/:id', (req,res)=>{
-  const db=load(); const i = db.meds.findIndex(x=>x.id===req.params.id); if (i<0) return res.status(404).json({error:'not found'})
+  const db=load(); const i=db.meds.findIndex(x=>x.id===req.params.id); if (i<0) return res.status(404).json({error:'not found'})
   db.meds.splice(i,1); save(db); res.json({ok:true})
 })
 
@@ -121,4 +119,5 @@ app.get('*',(req,res)=>{
   res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')
   res.sendFile(path.join(__dirname,'dist','index.html'))
 })
-app.listen(80, ()=>console.log('PepTrackr listening on :80, data at', DATA_FILE))
+
+app.listen(80, ()=>console.log('PepTrackr listening on :80 — data at', DATA_FILE))
