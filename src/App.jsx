@@ -27,52 +27,38 @@ const defaultMeds = [
 ]
 const defaultUser = { id:'u1', name:'You', sex:'M', heightCm:180 }
 
-function SyringeGauge({ units=25 }){
-  const total=100
-  const u = clamp(units,0,total)
-  const fillPct = u/total
+/* --- Icons --- */
+const IconHome = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/></svg>)
+const IconSettings = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V22a2 2 0 1 1-4 0v-.07a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.07a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 6.02 3.3l.06.06c.48.48 1.17.62 1.82.33A1.65 1.65 0 0 0 9.41 2H9.5a2 2 0 1 1 4 0h.09a1.65 1.65 0 0 0 1.51 1c.65.29 1.34.15 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06c-.48.48-.62 1.17-.33 1.82.29.65.15 1.34-.33 1.82.48.48.62 1.17.33 1.82Z"/></svg>)
+const IconShot = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7h13"/><path d="M12 3v8"/><rect x="3" y="7" width="13" height="7" rx="2"/><path d="M16 10h5"/></svg>)
+const IconWeight = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 7a5 5 0 0 1 5 5h-2a3 3 0 0 0-3-3V7z"/></svg>)
+const IconCalc = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h4"/></svg>)
+
+/* --- Upcoming gauge (v16-style) --- */
+function UpcomingShotGauge({ daysLeft=3, hoursLeft=0, color='#60a5fa', label='Next dose' }){
+  const totalDays = 14
+  const totalHours = totalDays*24
+  const leftHours = daysLeft*24 + hoursLeft
+  const pct = Math.max(0, Math.min(1, 1 - (leftHours/totalHours)))
+  const angle = pct*2*Math.PI
+  const cx=40, cy=40, r=32
+  const x = cx + r*Math.cos(-Math.PI/2 + angle)
+  const y = cy + r*Math.sin(-Math.PI/2 + angle)
+  const large = angle > Math.PI ? 1 : 0
+  const d = `M ${cx} ${cy-r} A ${r} ${r} 0 ${large} 1 ${x} ${y}`
   return (
-    <svg viewBox="0 0 320 120" width="100%" aria-label="syringe gauge">
-      <defs>
-        <linearGradient id="glass" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#ffffff22"/><stop offset="50%" stopColor="#ffffff11"/><stop offset="100%" stopColor="#00000022"/>
-        </linearGradient>
-        <filter id="glow"><feDropShadow dx="0" dy="0" stdDeviation="1" floodColor="#ffffffaa"/></filter>
-      </defs>
-      <rect x="40" y="30" width="240" height="30" rx="8" fill="url(#glass)" stroke="#aab" strokeOpacity="0.4"/>
-      <rect x="40" y="42" width={240*fillPct} height="6" rx="3" fill="#60a5fa" filter="url(#glow)"/>
-      {[...Array(11)].map((_,i)=>{
-        const x = 40 + i*24
-        const h = i%2===0?14:8
-        return <line key={i} x1={x} y1={26} x2={x} y2={26+h} stroke="#e5e7eb" strokeOpacity="0.8" strokeWidth="1"/>
-      })}
-      <rect x="280" y="43" width="24" height="4" rx="2" fill="#9ca3af"/>
-      <polygon points="304,45 318,45 318,47 304,47" fill="#9ca3af"/>
-      <text x="160" y="85" textAnchor="middle" fill="#e5e7eb" fontWeight="700">{u} u</text>
+    <svg viewBox="0 0 100 100" width="92">
+      <circle cx={cx} cy={cy} r={r} stroke="#334155" strokeWidth="10" fill="none"/>
+      <path d={d} stroke={color} strokeWidth="10" fill="none" strokeLinecap="round"/>
+      <circle cx={cx} cy={cy} r="24" fill={color} opacity="0.18"/>
+      <text x={cx} y={cy-2} textAnchor="middle" dominantBaseline="middle" fontWeight="800" fill="#e5e7eb">{daysLeft}d</text>
+      <text x={cx} y={cy+12} textAnchor="middle" fontSize="10" fill="#e5e7eb">{hoursLeft}h</text>
+      <text x={cx} y={cy+26} textAnchor="middle" fontSize="10" fill="#e5e7eb">{label}</text>
     </svg>
   )
 }
 
-function VialVertical({ drawUnits=25, totalUnits=100 }){
-  const used = clamp(drawUnits,0,totalUnits)
-  const remain = totalUnits - used
-  const h = 160
-  const usedH = (used/totalUnits)*h
-  return (
-    <svg viewBox="0 0 80 210" width="60" aria-label="vial level">
-      <defs>
-        <linearGradient id="glass2" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#ffffff33"/><stop offset="100%" stopColor="#00000033"/>
-        </linearGradient>
-      </defs>
-      <rect x="20" y="10" width="40" height="180" rx="10" fill="url(#glass2)" stroke="#aab" strokeOpacity="0.4"/>
-      <rect x="20" y={10+(h-usedH)} width="40" height={usedH} rx="10" fill="#60a5fa" opacity="0.8"/>
-      <rect x="16" y="2" width="48" height="10" rx="3" fill="#9ca3af"/>
-      <text x="40" y="200" textAnchor="middle" fill="#e5e7eb" fontSize="12">{remain} u left</text>
-    </svg>
-  )
-}
-
+/* --- BMI linear --- */
 function BMILinear({ bmi=25 }){
   const pos = Math.max(0, Math.min(100, (bmi/40)*100))
   return (
@@ -92,48 +78,56 @@ function BMILinear({ bmi=25 }){
   )
 }
 
-function UpcomingShotGauge({ daysLeft=3, color='#60a5fa', label='Next dose' }){
-  const total=14
-  const pct = Math.max(0,Math.min(1,1 - (daysLeft/total)))
-  const angle = pct*2*Math.PI
-  const cx=40, cy=40, r=32
-  const x = cx + r*Math.cos(-Math.PI/2 + angle)
-  const y = cy + r*Math.sin(-Math.PI/2 + angle)
-  const large = angle > Math.PI ? 1 : 0
-  const d = `M ${cx} ${cy-r} A ${r} ${r} 0 ${large} 1 ${x} ${y}`
-  return (
-    <svg viewBox="0 0 100 100" width="86">
-      <circle cx={cx} cy={cy} r={r} stroke="#334155" strokeWidth="10" fill="none"/>
-      <path d={d} stroke={color} strokeWidth="10" fill="none" strokeLinecap="round"/>
-      <circle cx={cx} cy={cy} r="24" fill={color} opacity="0.15"/>
-      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontWeight="800" fill="#e5e7eb">{daysLeft}d</text>
-      <text x={cx} y={cy+22} textAnchor="middle" fontSize="10" fill="#e5e7eb">{label}</text>
-    </svg>
-  )
-}
-
+/* --- Weight chart with higher contrast --- */
 function WeightChart({ points }){
   const labels = points.map(p=>p.date)
   const data = {
     labels,
-    datasets:[{ label:'Weight', data: points.map(p=>p.kg), borderWidth:3, tension:0.3 }]
+    datasets:[{
+      label:'Weight',
+      data: points.map(p=>p.kg),
+      borderWidth:4,
+      pointRadius:3,
+      pointHoverRadius:5,
+      borderColor:'#ffffff',
+      pointBackgroundColor:'#ffffff',
+      tension:0.35
+    }]
   }
   const options = {
     responsive:true,
     plugins:{ legend:{ display:false } },
-    scales: { x:{ ticks:{ color:'#9ca3af'}}, y:{ ticks:{ color:'#9ca3af'}} }
+    scales: { 
+      x:{ ticks:{ color:'#e5e7eb'}}, 
+      y:{ ticks:{ color:'#e5e7eb'} } 
+    }
   }
   return <div className="card chart-card"><Line data={data} options={options}/></div>
 }
 
+/* --- Med chart (unchanged behavior) --- */
 function MedChart({ meds, doses }){
   const [view,setView] = useState('step')
   const today = new Date()
   const start = new Date(today); start.setDate(start.getDate()-28)
   const days = 56
+  function remainingFromDosesLocal(doses, halfLifeDays, startDate, lengthDays){
+    const k = Math.log(2) / halfLifeDays
+    const out = []
+    for(let i=0;i<=lengthDays;i++){
+      const t = new Date(startDate); t.setDate(t.getDate()+i)
+      let mg = 0
+      for(const d of doses){
+        const dt = (t - new Date(d.date))/(1000*60*60*24)
+        if (dt >= 0){ mg += d.mg * Math.exp(-k*dt) }
+      }
+      out.push({ date: fmtDate(t), mg })
+    }
+    return out
+  }
   const series = meds.map(m=>{
     const ds = doses.filter(d=>d.medId===m.id)
-    const vals = remainingFromDoses(ds, m.halfLifeDays||7, start, days)
+    const vals = remainingFromDosesLocal(ds, m.halfLifeDays||7, start, days)
     return { label:m.name, color:m.color||'#60a5fa', vals }
   })
   const labels = series.length? series[0].vals.map(v=>v.date) : []
@@ -157,62 +151,75 @@ function MedChart({ meds, doses }){
   )
 }
 
+/* --- Root App with bottom nav that navigates --- */
 export default function App(){
   const [ready,setReady] = useState(false)
   useEffect(()=>{ const t=setTimeout(()=>setReady(true), 1000); return ()=>clearTimeout(t) }, [])
-  const [user] = useState(defaultUser)
-  const [meds] = useState(defaultMeds)
-  const [doses] = useState([
+  const [tab,setTab] = useState('home')
+
+  const user = defaultUser
+  const meds = defaultMeds
+  const doses = [
     { medId:'tirze', date: fmtDate(new Date(Date.now()-14*864e5)), mg:5 },
     { medId:'tirze', date: fmtDate(new Date(Date.now()-7*864e5)), mg:5 },
     { medId:'tirze', date: fmtDate(new Date(Date.now()-0*864e5)), mg:5 },
     { medId:'retat', date: fmtDate(new Date(Date.now()-10*864e5)), mg:2.5 }
-  ])
-  const [weights] = useState([
+  ]
+  const weights = [
     { date: fmtDate(new Date(Date.now()-27*864e5)), kg:100 },
     { date: fmtDate(new Date(Date.now()-20*864e5)), kg:99 },
     { date: fmtDate(new Date(Date.now()-14*864e5)), kg:98.5 },
     { date: fmtDate(new Date(Date.now()-7*864e5)),  kg:98 },
     { date: fmtDate(new Date(Date.now()-0*864e5)),  kg:97.8 }
-  ])
+  ]
   const heightM = (user.heightCm||180)/100
   const lastKg = weights[weights.length-1]?.kg || 90
   const bmi = lastKg/(heightM*heightM)
+
   if (!ready){ return <div className="splash"><div className="splash-logo">PepTrackr</div></div> }
-  return (
-    <div className="container">
-      <div className="header">
-        <div className="brand"><div className="logo">PT</div> PepTrackr <span className="badge">{user.name}</span></div>
-        <div className="small">v17.6</div>
-      </div>
+
+  const Home = () => (
+    <>
       <MedChart meds={meds} doses={doses} />
-      <BMILinear bmi={bmi}/>
+      {/* v16-style: Next Shots ABOVE BMI */}
       <div className="card">
         <div className="row" style={{alignItems:'center',justifyContent:'space-between'}}>
           <div>
             <div style={{fontWeight:700, marginBottom:6}}>Next shots</div>
             <div className="small">Color-coded per medication</div>
           </div>
-          <div className="row" style={{gap:12}}>
-            <UpcomingShotGauge daysLeft={3} color={meds[0].color} label={meds[0].name}/>
-            <UpcomingShotGauge daysLeft={6} color={meds[1].color} label={meds[1].name}/>
+          <div className="upcoming-wrap">
+            <UpcomingShotGauge daysLeft={3} hoursLeft={12} color={meds[0].color} label={meds[0].name}/>
+            <UpcomingShotGauge daysLeft={6} hoursLeft={ 0} color={meds[1].color} label={meds[1].name}/>
           </div>
         </div>
       </div>
+      <BMILinear bmi={bmi}/>
       <WeightChart points={weights} />
-      <div className="card">
-        <div style={{fontWeight:700, marginBottom:6}}>Dose calculator</div>
-        <div className="row" style={{alignItems:'center',gap:16}}>
-          <SyringeGauge units={25}/>
-          <VialVertical drawUnits={25} totalUnits={100}/>
-        </div>
+    </>
+  )
+
+  const Placeholder = ({title}) => (
+    <div className="card"><strong>{title}</strong><div className="small">Coming soon</div></div>
+  )
+
+  return (
+    <div className="container">
+      <div className="header">
+        <div className="brand"><div className="logo">PT</div> PepTrackr <span className="badge">{user.name}</span></div>
+        <div className="small">v17.6</div>
       </div>
+      {tab==='home' && <Home/>}
+      {tab==='settings' && <Placeholder title="Settings"/>}
+      {tab==='shot' && <Placeholder title="Add Shot"/>}
+      {tab==='weight' && <Placeholder title="Weight"/>}
+      {tab==='calc' && <Placeholder title="Calculator"/>}
       <div className="bottom-bar">
-        <button className="icon-btn active">Home</button>
-        <button className="icon-btn">Settings</button>
-        <button className="icon-btn">Shot</button>
-        <button className="icon-btn">Weight</button>
-        <button className="icon-btn">Calc</button>
+        <button className={"icon-btn " + (tab==='home'?'active':'')} onClick={()=>setTab('home')}><IconHome/><span>Home</span></button>
+        <button className={"icon-btn " + (tab==='settings'?'active':'')} onClick={()=>setTab('settings')}><IconSettings/><span>Settings</span></button>
+        <button className={"icon-btn " + (tab==='shot'?'active':'')} onClick={()=>setTab('shot')}><IconShot/><span>Shot</span></button>
+        <button className={"icon-btn " + (tab==='weight'?'active':'')} onClick={()=>setTab('weight')}><IconWeight/><span>Weight</span></button>
+        <button className={"icon-btn " + (tab==='calc'?'active':'')} onClick={()=>setTab('calc')}><IconCalc/><span>Calc</span></button>
       </div>
     </div>
   )
