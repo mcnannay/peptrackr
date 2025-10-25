@@ -28,14 +28,14 @@ function save(obj){ fs.writeFileSync(DATA_FILE, JSON.stringify(obj, null, 2)) }
 
 app.use(express.json())
 
-// Avoid stale SPA shell caching
+// Avoid stale SPA shell
 app.get('/', (req,res,next)=>{
   res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')
   res.set('Pragma','no-cache'); res.set('Expires','0'); next()
 })
 
 // ---- API ----
-app.get('/api/health', (req,res)=>res.json({ok:true, version:'16.6.0'}))
+app.get('/api/health', (req,res)=>res.json({ok:true, version:'v16.5.2+server'}))
 
 // Users
 app.get('/api/users', (req,res)=>{ const db=load(); res.json({users:db.users, currentUserId:db.currentUserId}) })
@@ -73,19 +73,20 @@ app.post('/api/users/:id/select', (req,res)=>{
 // Meds
 app.get('/api/meds', (req,res)=>{ const db=load(); res.json({meds: db.meds}) })
 app.post('/api/meds', (req,res)=>{
-  const {name, halfLifeDays, color='#60a5fa', cadenceDays=7, enabled=true} = req.body||{}
+  const {name, halfLifeHours, everyDays=7, color='#60a5fa', ka=1.0, enabled=true} = req.body||{}
   if (!name) return res.status(400).json({error:'name required'})
   const db=load(); const id='m'+Math.random().toString(36).slice(2,8)
-  db.meds.push({id, name, halfLifeDays:Number(halfLifeDays)||7, color, cadenceDays:Number(cadenceDays)||7, enabled: !!enabled})
+  db.meds.push({id, name, halfLifeHours:Number(halfLifeHours)||24, everyDays:Number(everyDays)||7, color, ka:Number(ka)||1.0, enabled: !!enabled})
   save(db); res.json({id})
 })
 app.put('/api/meds/:id', (req,res)=>{
   const db=load(); const m = db.meds.find(x=>x.id===req.params.id); if (!m) return res.status(404).json({error:'not found'})
-  const {name, halfLifeDays, color, cadenceDays, enabled} = req.body||{}
+  const {name, halfLifeHours, everyDays, color, ka, enabled} = req.body||{}
   if (name!=null) m.name=name
-  if (halfLifeDays!=null) m.halfLifeDays=Number(halfLifeDays)
+  if (halfLifeHours!=null) m.halfLifeHours=Number(halfLifeHours)
+  if (everyDays!=null) m.everyDays=Number(everyDays)
   if (color!=null) m.color=color
-  if (cadenceDays!=null) m.cadenceDays=Number(cadenceDays)
+  if (ka!=null) m.ka=Number(ka)
   if (enabled!=null) m.enabled=!!enabled
   save(db); res.json({ok:true})
 })
@@ -97,23 +98,23 @@ app.delete('/api/meds/:id', (req,res)=>{
 // Shots
 app.get('/api/shots', (req,res)=>{ const db=load(); res.json({shots: db.shots}) })
 app.post('/api/shots', (req,res)=>{
-  const {userId, medId, date, mg} = req.body||{}
-  if (!userId || !medId || !date || mg==null) return res.status(400).json({error:'userId, medId, date, mg required'})
+  const {userId, medId, dateISO, mg} = req.body||{}
+  if (!userId || !medId || !dateISO || mg==null) return res.status(400).json({error:'userId, medId, dateISO, mg required'})
   const db=load(); const id='s'+Math.random().toString(36).slice(2,8)
-  db.shots.push({id, userId, medId, date, mg:Number(mg)})
+  db.shots.push({id, userId, medId, atISO:dateISO, dose:Number(mg)})
   save(db); res.json({id})
 })
 
 // Weights
 app.get('/api/weights', (req,res)=>{ const db=load(); res.json({weights: db.weights}) })
 app.post('/api/weights', (req,res)=>{
-  const {userId, date, kg} = req.body||{}
-  if (!userId || !date || kg==null) return res.status(400).json({error:'userId, date, kg required'})
+  const {userId, dateISO, kg} = req.body||{}
+  if (!userId || !dateISO || kg==null) return res.status(400).json({error:'userId, dateISO, kg required'})
   const db=load(); const id='w'+Math.random().toString(36).slice(2,8)
-  db.weights.push({id, userId, date, kg:Number(kg)}); save(db); res.json({id})
+  db.weights.push({id, userId, atISO:dateISO, kg:Number(kg)}); save(db); res.json({id})
 })
 
-// Static
+// Static assets
 app.use(express.static(path.join(__dirname,'dist'), { maxAge:'1d', etag:true }))
 app.get('*',(req,res)=>{
   res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')
