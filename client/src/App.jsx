@@ -7,7 +7,24 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 const load=(k,f)=>{ 
   try {
     const v = localStorage.getItem(k);
-    return v ? JSON.parse(v) : f;
+    
+// --- Server bootstrap: hydrate localStorage from server on first load ---
+(async () => {
+  try {
+    const res = await fetch('/api/storage/all');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data === 'object') {
+        for (const [k, v] of Object.entries(data)) {
+          try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {}
+        }
+        try { window.dispatchEvent(new Event('storage')); } catch(e) {}
+      }
+    }
+  } catch(e){}
+})();
+// --- End bootstrap ---
+return v ? JSON.parse(v) : f;
   } catch(e){ 
     return f; 
   }
