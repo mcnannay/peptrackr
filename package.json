@@ -1,6 +1,6 @@
 {
   "name": "peptrackr",
-  "version": "17.5.0",
+  "version": "17.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "4.19.2",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "chart.js": "4.4.1",

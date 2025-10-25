@@ -1,7 +1,10 @@
 version: "3.9"
 services:
   peptrackr:
-    image: ghcr.io/mcnannay/peptrackr:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: peptrackr:v17.6
     ports:
       - "8085:80"
     restart: unless-stopped
