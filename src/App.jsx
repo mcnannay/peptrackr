@@ -1,6 +1,8 @@
+
 import React, { useEffect, useState } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend } from 'chart.js'
+import { Users, Meds, Shots, Weights } from './api'
 ChartJS.register(LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend)
 
 const clamp = (v,min,max)=>Math.max(min,Math.min(max,v))
@@ -20,12 +22,6 @@ function remainingFromDoses(doses, halfLifeDays, startDate, lengthDays){
   }
   return out
 }
-
-const defaultMeds = [
-  { id:'tirze', name:'Tirzepatide', color:'#7dd3fc', halfLifeDays:5.5, cadenceDays:7, enabled:true },
-  { id:'retat', name:'Retatrutide', color:'#a78bfa', halfLifeDays:9.0, cadenceDays:7, enabled:true }
-]
-const defaultUser = { id:'u1', name:'You', sex:'M', heightCm:180 }
 
 const IconHome = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/></svg>)
 const IconSettings = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V22a2 2 0 1 1-4 0v-.07a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.07a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 6.02 3.3l.06.06c.48.48 1.17.62 1.82.33A1.65 1.65 0 0 0 9.41 2H9.5a2 2 0 1 1 4 0h.09a1.65 1.65 0 0 0 1.51 1c.65.29 1.34.15 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06c-.48.48-.62 1.17-.33 1.82.29.65.15 1.34-.33 1.82.48.48.62 1.17.33 1.82Z"/></svg>)
@@ -53,25 +49,6 @@ function UpcomingShotGauge({ daysLeft=3, hoursLeft=0, color='#60a5fa', label='Ne
       <text x={cx} y={cy+12} textAnchor="middle" fontSize="10" fill="#e5e7eb">{hoursLeft}h</text>
       <text x={cx} y={cy+26} textAnchor="middle" fontSize="10" fill="#e5e7eb">{label}</text>
     </svg>
-  )
-}
-
-function BMILinear({ bmi=25 }){
-  const pos = Math.max(0, Math.min(100, (bmi/40)*100))
-  return (
-    <div className="card">
-      <div className="row" style={{justifyContent:'space-between',alignItems:'center'}}>
-        <div><strong>BMI:</strong> {bmi.toFixed(1)}</div>
-        <div className="small">Under 18.5 | 18.5–24.9 | 25–29.9 | 30+</div>
-      </div>
-      <div className="bmi-bar" style={{marginTop:8}}>
-        <div className="bmi-seg" style={{width:'18.5%', background:'#60a5fa'}}/>
-        <div className="bmi-seg" style={{width:'31.5%', background:'#10b981'}}/>
-        <div className="bmi-seg" style={{width:'12.5%', background:'#f59e0b'}}/>
-        <div className="bmi-seg" style={{width:'37.5%', background:'#ef4444'}}/>
-        <div className="bmi-marker" style={{left: `calc(${pos}% - 1px)`}}/>
-      </div>
-    </div>
   )
 }
 
@@ -149,32 +126,37 @@ export default function App(){
   const [ready,setReady] = useState(false)
   useEffect(()=>{ const t=setTimeout(()=>setReady(true), 1000); return ()=>clearTimeout(t) }, [])
   const [tab,setTab] = useState('home')
+  const [users,setUsers] = useState([])
+  const [currentUserId,setCurrentUserId] = useState(null)
+  const [meds,setMeds] = useState([])
+  const [shots,setShots] = useState([])
+  const [weights,setWeights] = useState([])
 
-  const user = defaultUser
-  const meds = defaultMeds
-  const doses = [
-    { medId:'tirze', date: fmtDate(new Date(Date.now()-14*864e5)), mg:5 },
-    { medId:'tirze', date: fmtDate(new Date(Date.now()-7*864e5)), mg:5 },
-    { medId:'tirze', date: fmtDate(new Date(Date.now()-0*864e5)), mg:5 },
-    { medId:'retat', date: fmtDate(new Date(Date.now()-10*864e5)), mg:2.5 }
-  ]
-  const weights = [
-    { date: fmtDate(new Date(Date.now()-27*864e5)), kg:100 },
-    { date: fmtDate(new Date(Date.now()-20*864e5)), kg:99 },
-    { date: fmtDate(new Date(Date.now()-14*864e5)), kg:98.5 },
-    { date: fmtDate(new Date(Date.now()-7*864e5)),  kg:98 },
-    { date: fmtDate(new Date(Date.now()-0*864e5)),  kg:97.8 }
-  ]
-  const heightM = (user.heightCm||180)/100
-  const lastKg = weights[weights.length-1]?.kg || 90
+  // load server data
+  useEffect(()=>{
+    (async ()=>{
+      try{
+        const u = await Users.list(); setUsers(u.users||[]); setCurrentUserId(u.currentUserId||null)
+        const m = await Meds.list(); setMeds(m.meds||[])
+        const s = await Shots.list(); setShots(s.shots||[])
+        const w = await Weights.list(); setWeights(w.weights||[])
+      }catch(e){ console.error(e) }
+    })()
+  }, [])
+
+  const currentUser = users.find(u=>u.id===currentUserId)
+
+  // Derived BMI from last weight of current user
+  const userWeights = weights.filter(w=>w.userId===currentUserId).sort((a,b)=>a.date.localeCompare(b.date))
+  const lastKg = userWeights[userWeights.length-1]?.kg || 90
+  const heightM = (currentUser?.heightCm||180)/100
   const bmi = lastKg/(heightM*heightM)
 
   if (!ready){ return <div className="splash"><div className="splash-logo">PepTrackr</div></div> }
 
   const Home = () => (
     <>
-      <MedChart meds={meds} doses={doses} />
-      {/* Next Shots ABOVE BMI (v16 layout) */}
+      <MedChart meds={meds} doses={shots.filter(s=>s.userId===currentUserId)} />
       <div className="card">
         <div className="row" style={{alignItems:'center',justifyContent:'space-between'}}>
           <div>
@@ -182,15 +164,68 @@ export default function App(){
             <div className="small">Color-coded per medication</div>
           </div>
           <div className="upcoming-wrap">
-            <UpcomingShotGauge daysLeft={3} hoursLeft={12} color={meds[0].color} label={meds[0].name}/>
-            <UpcomingShotGauge daysLeft={6} hoursLeft={ 0} color={meds[1].color} label={meds[1].name}/>
+            {meds.slice(0,2).map((m,i)=>(
+              <UpcomingShotGauge key={m.id} daysLeft={3+i*2} hoursLeft={i?0:12} color={m.color||'#60a5fa'} label={m.name}/>
+            ))}
           </div>
         </div>
       </div>
-      <BMILinear bmi={bmi}/>
-      <WeightChart points={weights} />
+      <div className="card">
+        <div className="row" style={{justifyContent:'space-between',alignItems:'center'}}>
+          <div><strong>BMI:</strong> {isFinite(bmi)?bmi.toFixed(1):'—'}</div>
+          <div className="small">Under 18.5 | 18.5–24.9 | 25–29.9 | 30+</div>
+        </div>
+        <div className="bmi-bar" style={{marginTop:8}}>
+          <div className="bmi-seg" style={{width:'18.5%', background:'#60a5fa'}}/>
+          <div className="bmi-seg" style={{width:'31.5%', background:'#10b981'}}/>
+          <div className="bmi-seg" style={{width:'12.5%', background:'#f59e0b'}}/>
+          <div className="bmi-seg" style={{width:'37.5%', background:'#ef4444'}}/>
+          <div className="bmi-marker" style={{left: `calc(${Math.max(0,Math.min(100,(bmi/40)*100))}% - 1px)`}}/>
+        </div>
+      </div>
+      <WeightChart points={userWeights.length?userWeights:[{date:fmtDate(new Date()),kg:lastKg}] } />
     </>
   )
+
+  const Settings = () => {
+    const [name,setName] = useState('')
+    const [sex,setSex] = useState('M')
+    const [height,setHeight] = useState(currentUser?.heightCm || 170)
+    useEffect(()=>{ setHeight(currentUser?.heightCm||170) }, [currentUserId])
+    async function addUser(){
+      if (!name.trim()) return
+      const r = await Users.add(name.trim(), sex, Number(height)||170)
+      const u = await Users.list(); setUsers(u.users); setCurrentUserId(u.currentUserId)
+      setName('')
+    }
+    async function saveUser(){
+      if (!currentUser) return
+      await Users.update(currentUser.id, {sex, heightCm:Number(height)||170})
+      const u = await Users.list(); setUsers(u.users); setCurrentUserId(u.currentUserId)
+    }
+    return (
+      <div className="card">
+        <div style={{fontWeight:700, marginBottom:8}}>Users</div>
+        <div className="row">
+          <select className="input" value={currentUserId||''} onChange={async e=>{ await Users.select(e.target.value); const u=await Users.list(); setUsers(u.users); setCurrentUserId(u.currentUserId) }}>
+            {users.map(u=> <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <button className="btn ghost" onClick={async ()=>{ if (!currentUser) return; await Users.remove(currentUser.id); const u=await Users.list(); setUsers(u.users); setCurrentUserId(u.currentUserId) }}>Delete</button>
+        </div>
+        <div className="row">
+          <input className="input" placeholder="New user's name" value={name} onChange={e=>setName(e.target.value)}/>
+          <select className="input" value={sex} onChange={e=>setSex(e.target.value)}>
+            <option>M</option><option>F</option><option>Other</option>
+          </select>
+          <input className="input" type="number" placeholder="Height (cm)" value={height} onChange={e=>setHeight(e.target.value)}/>
+        </div>
+        <div className="row">
+          <button className="btn" onClick={addUser}>Add user</button>
+          <button className="btn ghost" onClick={saveUser}>Save current</button>
+        </div>
+      </div>
+    )
+  }
 
   const Placeholder = ({title}) => (
     <div className="card"><strong>{title}</strong><div className="small">Coming soon</div></div>
@@ -199,11 +234,11 @@ export default function App(){
   return (
     <div className="container">
       <div className="header">
-        <div className="brand"><div className="logo">PT</div> PepTrackr <span className="badge">{user.name}</span></div>
-        <div className="small">v17.6.1</div>
+        <div className="brand"><div className="logo">PT</div> PepTrackr <span className="badge">{currentUser?.name || '—'}</span></div>
+        <div className="small">v16.5.3</div>
       </div>
       {tab==='home' && <Home/>}
-      {tab==='settings' && <Placeholder title="Settings"/>}
+      {tab==='settings' && <Settings/>}
       {tab==='shot' && <Placeholder title="Add Shot"/>}
       {tab==='weight' && <Placeholder title="Weight"/>}
       {tab==='calc' && <Placeholder title="Calculator"/>}

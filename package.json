@@ -1,16 +1,16 @@
 {
   "name": "peptrackr",
-  "version": "17.6.0",
+  "version": "16.5.3",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --logLevel info",
+    "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "4.19.2",
+    "express": "4.21.2",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "chart.js": "4.4.1",

@@ -1,13 +1,14 @@
-# ---------- Build stage ----------
+
+# ---- Build stage ----
 FROM node:20-bookworm-slim AS build
 WORKDIR /app
 ENV NODE_OPTIONS=--max-old-space-size=1024 NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false NPM_CONFIG_LEGACY_PEER_DEPS=true
 COPY package*.json ./
-RUN npm install
+RUN if [ -f package-lock.json ]; then npm ci || npm install; else npm install; fi
 COPY . .
 RUN npm run build
 
-# ---------- Runtime stage ----------
+# ---- Runtime stage ----
 FROM node:20-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production DATA_DIR=/data
