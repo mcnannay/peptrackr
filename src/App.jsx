@@ -27,14 +27,12 @@ const defaultMeds = [
 ]
 const defaultUser = { id:'u1', name:'You', sex:'M', heightCm:180 }
 
-/* --- Icons --- */
 const IconHome = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/></svg>)
 const IconSettings = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V22a2 2 0 1 1-4 0v-.07a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.07a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 6.02 3.3l.06.06c.48.48 1.17.62 1.82.33A1.65 1.65 0 0 0 9.41 2H9.5a2 2 0 1 1 4 0h.09a1.65 1.65 0 0 0 1.51 1c.65.29 1.34.15 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06c-.48.48-.62 1.17-.33 1.82.29.65.15 1.34-.33 1.82.48.48.62 1.17.33 1.82Z"/></svg>)
 const IconShot = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7h13"/><path d="M12 3v8"/><rect x="3" y="7" width="13" height="7" rx="2"/><path d="M16 10h5"/></svg>)
 const IconWeight = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 7a5 5 0 0 1 5 5h-2a3 3 0 0 0-3-3V7z"/></svg>)
 const IconCalc = ()=> (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h4"/></svg>)
 
-/* --- Upcoming gauge (v16-style) --- */
 function UpcomingShotGauge({ daysLeft=3, hoursLeft=0, color='#60a5fa', label='Next dose' }){
   const totalDays = 14
   const totalHours = totalDays*24
@@ -58,7 +56,6 @@ function UpcomingShotGauge({ daysLeft=3, hoursLeft=0, color='#60a5fa', label='Ne
   )
 }
 
-/* --- BMI linear --- */
 function BMILinear({ bmi=25 }){
   const pos = Math.max(0, Math.min(100, (bmi/40)*100))
   return (
@@ -78,7 +75,6 @@ function BMILinear({ bmi=25 }){
   )
 }
 
-/* --- Weight chart with higher contrast --- */
 function WeightChart({ points }){
   const labels = points.map(p=>p.date)
   const data = {
@@ -97,15 +93,11 @@ function WeightChart({ points }){
   const options = {
     responsive:true,
     plugins:{ legend:{ display:false } },
-    scales: { 
-      x:{ ticks:{ color:'#e5e7eb'}}, 
-      y:{ ticks:{ color:'#e5e7eb'} } 
-    }
+    scales: { x:{ ticks:{ color:'#e5e7eb'}}, y:{ ticks:{ color:'#e5e7eb'}} }
   }
   return <div className="card chart-card"><Line data={data} options={options}/></div>
 }
 
-/* --- Med chart (unchanged behavior) --- */
 function MedChart({ meds, doses }){
   const [view,setView] = useState('step')
   const today = new Date()
@@ -125,15 +117,17 @@ function MedChart({ meds, doses }){
     }
     return out
   }
-  const series = meds.map(m=>{
+  const labels = Array.from({length:56+1}).map((_,i)=>{
+    const t = new Date(start); t.setDate(t.getDate()+i); return fmtDate(t)
+  })
+  const datasets = meds.map(m=>{
     const ds = doses.filter(d=>d.medId===m.id)
     const vals = remainingFromDosesLocal(ds, m.halfLifeDays||7, start, days)
-    return { label:m.name, color:m.color||'#60a5fa', vals }
+    return {
+      label:m.name, data: vals.map(v=>v.mg), borderColor:m.color||'#60a5fa',
+      borderWidth:3, tension:(view==='pk'?0.4:0), stepped:(view==='step')
+    }
   })
-  const labels = series.length? series[0].vals.map(v=>v.date) : []
-  const datasets = series.map(s=>({
-    label:s.label, data:s.vals.map(v=>v.mg), borderColor:s.color, borderWidth:3, tension:(view==='pk'?0.4:0), stepped:(view==='step')
-  }))
   const data = { labels, datasets }
   const options = { responsive:true, plugins:{ legend:{ labels:{ color:'#cbd5e1'}}},
     scales:{ x:{ ticks:{ color:'#9ca3af'}}, y:{ ticks:{ color:'#9ca3af'}} } }
@@ -151,7 +145,6 @@ function MedChart({ meds, doses }){
   )
 }
 
-/* --- Root App with bottom nav that navigates --- */
 export default function App(){
   const [ready,setReady] = useState(false)
   useEffect(()=>{ const t=setTimeout(()=>setReady(true), 1000); return ()=>clearTimeout(t) }, [])
@@ -181,7 +174,7 @@ export default function App(){
   const Home = () => (
     <>
       <MedChart meds={meds} doses={doses} />
-      {/* v16-style: Next Shots ABOVE BMI */}
+      {/* Next Shots ABOVE BMI (v16 layout) */}
       <div className="card">
         <div className="row" style={{alignItems:'center',justifyContent:'space-between'}}>
           <div>
@@ -207,7 +200,7 @@ export default function App(){
     <div className="container">
       <div className="header">
         <div className="brand"><div className="logo">PT</div> PepTrackr <span className="badge">{user.name}</span></div>
-        <div className="small">v17.6</div>
+        <div className="small">v17.6.1</div>
       </div>
       {tab==='home' && <Home/>}
       {tab==='settings' && <Placeholder title="Settings"/>}
