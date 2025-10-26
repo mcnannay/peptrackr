@@ -1,52 +1,55 @@
+
 version: "3.9"
 
 services:
-  api:
-    build:
-      context: ./backend
-    environment:
-      API_HOST: 0.0.0.0
-      API_PORT: 8080
-      DATABASE_URL: sqlite:///./data.db
-      CORS_ORIGINS: "*"
-    volumes:
-      - ./backend/data:/app
-    ports:
-      - "8083:8080"       # host:container → API reachable on port 8081 externally
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+  db:
+    image: postgres:16-alpine
+    container_name: peptrackr_db
     restart: unless-stopped
+    environment:
+      POSTGRES_DB: peptrackr
+      POSTGRES_USER: pepuser
+      POSTGRES_PASSWORD: supersecurepassword
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pepuser -d peptrackr"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: peptrackr_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: "8086"
+      DATABASE_URL: "postgresql://pepuser:supersecurepassword@db:5432/peptrackr?schema=public"
+    expose:
+      - "8086"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8086/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   web:
-    build:
-      context: ./frontend
-      args:
-        # The frontend will call the backend inside Docker by this internal name
-        - VITE_API_BASE=http://api:8080
-    depends_on:
-      - api
-    ports:
-      - "8085:80"         # host:container → Web UI served on port 8085
+    build: ./frontend
+    container_name: peptrackr_web
     restart: unless-stopped
-
-  # Optional Postgres service if you want to switch from SQLite later
-  # postgres:
-  #   image: postgres:16-alpine
-  #   environment:
-  #     POSTGRES_DB: appdb
-  #     POSTGRES_USER: app
-  #     POSTGRES_PASSWORD: app
-  #   volumes:
-  #     - dbdata:/var/lib/postgresql/data
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 5
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8085:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ | grep -q PepTrackr || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
-  dbdata:
+  db_data:
