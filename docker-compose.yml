@@ -1,17 +1,20 @@
+version: "3.9"
 services:
   peptrackr:
     build: .
-    container_name: peptrackr
-    ports: ["8085:8080"]   # host:container
-    environment: ["DATA_DIR=/data"]
-    volumes: ["peptrackr_data:/data"]
-    restart: unless-stopped
+    container_name: peptrackr_server
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - DATA_DIR=/data
+    volumes:
+      - peptrackr_data:/data
+    ports:
+      - "8085:8080"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
-      interval: 20s
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
-
 volumes:
   peptrackr_data:

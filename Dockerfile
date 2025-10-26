@@ -1,28 +1,23 @@
-# ---------- Builder: install deps & build client ----------
-FROM node:20-bullseye AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends     python3 build-essential git ca-certificates &&     rm -rf /var/lib/apt/lists/*
-
+# Build client
+FROM node:20-alpine AS client
 WORKDIR /app/client
-COPY client/ ./
-RUN npm install --no-audit --no-fund --legacy-peer-deps --unsafe-perm
-RUN npm install -D vite@5 --no-audit --no-fund
-RUN npx vite build
+COPY client/package.json client/package-lock.json ./
+RUN npm install --no-audit --no-fund
+COPY client ./
+RUN npm run build
 
-# ---------- Runtime: server with SQLite persistence ----------
-FROM node:20-bullseye
-ENV NODE_ENV=production
+# Server
+FROM node:20-alpine
 WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends     python3 build-essential ca-certificates sqlite3 &&     rm -rf /var/lib/apt/lists/*
-
-COPY server/package.json ./server/package.json
-RUN cd server && npm install --omit=dev --no-audit --no-fund
-COPY server/ ./server/
-COPY --from=builder /app/client/dist/ ./server/public/
-
-VOLUME ["/data"]
+ENV NODE_ENV=production
+ENV PORT=8080
 ENV DATA_DIR=/data
-ENV PORT=8080  # INTERNAL PORT MUST BE 8080
+RUN apk add --no-cache curl
+COPY server/package.json server/package-lock.json ./server/
+WORKDIR /app/server
+RUN npm install --omit=dev --no-audit --no-fund
+COPY server ./
+# copy client build
+COPY --from=client /app/client/dist ../client_dist
 EXPOSE 8080
-
-CMD ["node", "server/index.js"]
+CMD ["node", "index.js"]

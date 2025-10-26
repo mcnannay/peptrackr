@@ -1,28 +1,31 @@
 import express from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import fs from 'fs';
-import sqlite3 from 'sqlite3';
+import cors from 'cors';
+import { fileURLToPath } from 'url';
+import { db, init, allKV, setKV, bulkSet, clearAll } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dataDir = process.env.DATA_DIR || '/data';
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-const dbFile = path.join(dataDir, 'app.db');
+const PORT = process.env.PORT || 8080;
+const DATA_DIR = process.env.DATA_DIR || './data';
 
-sqlite3.verbose();
-sqlite3.Database.prototype.configure && sqlite3.Database.prototype.configure('busyTimeout', 5000);
-const db = new sqlite3.Database(dbFile);
+const app = express();
+app.use(cors());
+app.use(express.json({limit:'5mb'}));
 
-// --- SSE: real-time broadcast of storage changes ---
+// SSE clients
 const clients = new Set();
 function broadcast(event, payload) {
   const data = JSON.stringify({ event, ...payload });
   for (const res of clients) {
-    try { res.write(`data: ${data}\n\n`); } catch (_) {}
+    try { res.write(`data: ${data}\n\n`); } catch {}
   }
 }
+
+app.get('/health', (req, res) => res.json({ok:true}));
+
 app.get('/api/stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-store');
@@ -33,143 +36,86 @@ app.get('/api/stream', (req, res) => {
   req.on('close', () => clients.delete(res));
 });
 
-
-db.serialize(() => {
-  db.run('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)');
+// Storage API
+app.get('/api/storage/all', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const data = await allKV();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({error: e.message});
+  }
 });
 
-const app = express();
-const PORT = process.env.PORT || 8080; // INTERNAL PORT MUST BE 8080
-app.set('trust proxy', 1);
-app.use(express.json({ limit: '2mb' }));
-
-// Health
-app.get('/health', (req, res) => res.json({ ok: true }));
-
-// API
-app.get('/api/storage/all', (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  db.all('SELECT key, value FROM kv', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    const obj = {};
-    for (const r of rows) {
-      let v = r.value;
-      try { v = JSON.parse(r.value); } catch(_) {}
-      obj[r.key] = v;
-    }
-    res.json(obj);
-  });
-});
-
-app.get('/api/storage/:key', (req, res) => {
-  db.get('SELECT key, value FROM kv WHERE key = ?', [req.params.key], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!row) return res.status(404).json({ error: 'not found' });
-    let v = row.value;
-    try { v = JSON.parse(row.value); } catch(_) {}
-    res.json({ key: row.key, value: v });
-  });
-});
-
-app.post('/api/storage', (req, res) => {
-  const { key, value } = req.body || {};
-  if (!key) return res.status(400).json({ error: 'key required' });
-  const text = (typeof value === 'string') ? value : JSON.stringify(value);
-  db.run('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', [key, text], (err) => {
-    if (err) return res.status(500).json({ error: err.message });
-    console.log('[storage] upsert', key);
-    res.json({ ok: true });
-  });
-});
-
-app.post('/api/storage/bulk', (req, res) => {
-  const { data } = req.body || {};
-  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
-  const entries = Object.entries(data);
-  if (!entries.length) return res.json({ ok: true, count: 0 });
-  const stmt = db.prepare('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
-  db.serialize(() => {
-    for (const [k, v] of entries) {
-      const text = (typeof v === 'string') ? v : JSON.stringify(v);
-      stmt.run(k, text);
-    }
-  });
-  stmt.finalize(err => {
-    if (err) return res.status(500).json({ error: err.message });
-    console.log('[storage] bulk upsert', entries.length, 'keys');
-    res.json({ ok: true, count: entries.length });
-  });
-});
-
-// Static client + HTML injection of bootstrap state (window.__PEP_BOOT__)
-const distDir = path.join(__dirname, 'public');
-app.use(express.static(distDir));
-
-function injectBootstrap(html, obj) {
-  const json = JSON.stringify(obj || {});
-  const script = `<script>window.__PEP_BOOT__=${json};</script>`;
-  return html.replace('</head>', script + '\n</head>');
-}
-
-app.get('*', (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  const indexPath = path.join(distDir, 'index.html');
-  fs.readFile(indexPath, 'utf8', (err, html) => {
-    if (err) return res.status(200).send('OK');
-    db.all('SELECT key, value FROM kv', [], (e, rows) => {
-      if (e) return res.status(500).send('DB error');
-      const obj = {};
-      for (const r of rows) {
-        let v = r.value;
-        try { v = JSON.parse(r.value); } catch(_) {}
-        obj[r.key] = v;
-      }
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.send(injectBootstrap(html, obj));
-    });
-  });
-});
-
-
-
-// Direct doc endpoints with broadcasting
-app.post('/api/doc/set', (req, res) => {
-  res.set('Cache-Control', 'no-store');
+app.post('/api/doc/set', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const sourceId = req.get('x-pep-instance') || null;
   const { key, value } = req.body || {};
-  if (!key) return res.status(400).json({ error: 'key required' });
-  const text = (typeof value === 'string') ? value : JSON.stringify(value);
-  db.run('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', [key, text], (err) => {
-    if (err) return res.status(500).json({ error: err.message });
-    try { broadcast('change', { source: sourceId, keys: [key] }); } catch(_) {}
-    res.json({ ok: true });
-  });
+  if (!key) return res.status(400).json({error:'key required'});
+  try {
+    await setKV(key, value);
+    res.json({ok:true});
+    broadcast('change', { source: sourceId, keys:[key] });
+  } catch(e) {
+    res.status(500).json({error:e.message});
+  }
 });
 
-app.post('/api/doc/bulkset', (req, res) => {
-  res.set('Cache-Control', 'no-store');
+app.post('/api/doc/bulkset', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const sourceId = req.get('x-pep-instance') || null;
   const { data } = req.body || {};
-  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
-  const entries = Object.entries(data);
-  if (!entries.length) return res.json({ ok: true, count: 0 });
-  const stmt = db.prepare('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
-  db.serialize(() => {
-    for (const [k, v] of entries) {
-      const text = (typeof v === 'string') ? v : JSON.stringify(v);
-      stmt.run([k, text]);
-    }
-    stmt.finalize((err) => {
-      if (err) return res.status(500).json({ error: err.message });
-      try { broadcast('change', { source: sourceId, keys: Object.keys(data) }); } catch(_) {}
-      res.json({ ok: true, count: entries.length });
-    });
-  });
+  if (!data || typeof data !== 'object') return res.status(400).json({error:'data object required'});
+  try {
+    const n = await bulkSet(data);
+    res.json({ok:true, count:n});
+    broadcast('change', { source: sourceId, keys:Object.keys(data) });
+  } catch(e) {
+    res.status(500).json({error:e.message});
+  }
 });
 
-app.listen(PORT, () => {
-  console.log(`PepTrackr (Direct DB) on http://0.0.0.0:${PORT}`);
+// Backup export/import
+app.get('/api/backup', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const data = await allKV();
+    res.setHeader('Content-Disposition','attachment; filename="backup.json"');
+    res.json(data);
+  } catch(e) {
+    res.status(500).json({error:e.message});
+  }
 });
 
-process.on('uncaughtException', (e)=>console.error('[fatal] uncaught', e));
-process.on('unhandledRejection', (e)=>console.error('[fatal] unhandled', e));
+app.post('/api/backup', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const sourceId = req.get('x-pep-instance') || null;
+  const data = req.body || {};
+  if (!data || typeof data !== 'object') return res.status(400).json({error:'object body required'});
+  try {
+    await bulkSet(data);
+    res.json({ok:true, count:Object.keys(data).length});
+    broadcast('change', { source: sourceId, keys:Object.keys(data) });
+  } catch(e) {
+    res.status(500).json({error:e.message});
+  }
+});
+
+// Static client
+const clientDir = path.resolve(__dirname, '../client_dist');
+app.use(express.static(clientDir));
+
+app.get('*', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const indexPath = path.join(clientDir, 'index.html');
+  if (!fs.existsSync(indexPath)) return res.status(404).send('missing client');
+  // Inject initial state
+  const html = fs.readFileSync(indexPath, 'utf8');
+  let boot = {};
+  try { boot = await allKV(); } catch {}
+  const injected = html.replace('__PEP_BOOT__', () => JSON.stringify(boot));
+  res.send(injected);
+});
+
+init();
+app.listen(PORT, () => console.log('Server listening on', PORT));
