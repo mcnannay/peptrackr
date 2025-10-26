@@ -5,13 +5,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends     python3 bui
 
 WORKDIR /app/client
 
-# Copy client first and install with npm only (tolerant flags)
+# Copy full client and install deps (npm only, tolerant flags)
 COPY client/ ./
 RUN npm install --no-audit --no-fund --legacy-peer-deps --unsafe-perm
 
-# Ensure a build command exists; if not, try vite directly
-# 1) Try package.json "build", else 2) npx vite build (install vite if missing)
-RUN npm run build || (npx --yes vite --version >/dev/null 2>&1 || npm install -D vite@5) && npx --yes vite build
+# Install Vite explicitly and build deterministically with it (no OR chains)
+RUN npm install -D vite@5 --no-audit --no-fund
+RUN npx vite build
 
 # ---------- Runtime: tiny server with persistent storage ----------
 FROM node:20-bullseye
