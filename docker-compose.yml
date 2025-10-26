@@ -1,4 +1,31 @@
+version: "3.9"
 services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: peptrackr-web:1.0.0
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: peptrackr-backend:1.0.0
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: peptrackr
+      PGPASSWORD: peptrackr
+      PGDATABASE: peptrackr
+    depends_on:
+      - db
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     environment:
@@ -6,42 +33,13 @@ services:
       POSTGRES_PASSWORD: peptrackr
       POSTGRES_DB: peptrackr
     volumes:
-      - db_data:/var/lib/postgresql/data
-    restart: always
+      - dbdata:/var/lib/postgresql/data
     healthcheck:
-      disable: true
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgres://peptrackr:peptrackr@db:5432/peptrackr
-      NODE_ENV: production
-      PORT: 8086
-    depends_on:
-      - db
-    ports:
-      - "8086:8086"
-    restart: always
-    healthcheck:
-      disable: true
-
-  web:
-    image: peptrackr_web:portainer-305
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        BUILD_VERSION: "portainer-305"
-        CACHE_BUSTER: "305"
-    depends_on:
-      - backend
-    ports:
-      - "8085:80"
-    restart: always
-    healthcheck:
-      disable: true
+      test: ["CMD-SHELL", "pg_isready -U peptrackr -d peptrackr"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
-  db_data: {}
+  dbdata:
