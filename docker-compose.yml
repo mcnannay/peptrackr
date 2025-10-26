@@ -1,55 +1,46 @@
-
-version: "3.9"
-
 services:
   db:
     image: postgres:16-alpine
     container_name: peptrackr_db
-    restart: unless-stopped
     environment:
+      POSTGRES_USER: peptrackr
+      POSTGRES_PASSWORD: peptrackr
       POSTGRES_DB: peptrackr
-      POSTGRES_USER: pepuser
-      POSTGRES_PASSWORD: supersecurepassword
     volumes:
       - db_data:/var/lib/postgresql/data
+    restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pepuser -d peptrackr"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      disable: true
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: peptrackr_backend
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      PORT: "8086"
-      DATABASE_URL: "postgresql://pepuser:supersecurepassword@db:5432/peptrackr?schema=public"
-    expose:
-      - "8086"
+      DATABASE_URL: postgres://peptrackr:peptrackr@db:5432/peptrackr
+      NODE_ENV: production
+      PORT: 8086
+    depends_on:
+      - db
+    ports:
+      - "8086:8086"
+    restart: always
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:8086/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      disable: true
 
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: peptrackr_web
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
     ports:
       - "8085:80"
+    depends_on:
+      - backend
+    restart: always
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/ | grep -q PepTrackr || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      disable: true
 
 volumes:
   db_data:
