@@ -3,6 +3,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
+RUN npm ci --no-audit --no-fund
 RUN npm config set legacy-peer-deps true \
  && npm config set fund false \
  && npm config set audit false \

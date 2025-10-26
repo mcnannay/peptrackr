@@ -28,12 +28,13 @@ services:
       disable: true
 
   web:
+    image: peptrackr_web:portainer-300   # bump tag per deploy
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Bump this number each time you redeploy to force Portainer to rebuild
-        BUILD_VERSION: "portainer-102"
+        BUILD_VERSION: "portainer-300"   # bump per deploy
+        CACHE_BUSTER: "300"              # bump per deploy
     depends_on:
       - backend
     ports:
