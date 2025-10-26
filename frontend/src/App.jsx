@@ -30,7 +30,7 @@ function ToggleChip({options,value,onChange,theme}){
 }
 
 
-const VERSION = '0.4.5'
+const VERSION = (import.meta?.env?.VITE_APP_VERSION) || 'dev'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, ReferenceLine } from 'recharts'
 
 const dayMs = 24*60*60*1000
