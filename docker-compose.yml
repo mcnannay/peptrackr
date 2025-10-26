@@ -12,7 +12,7 @@ services:
     volumes:
       - ./backend/data:/app
     ports:
-      - "8080:8080"
+      - "8083:8080"       # host:container → API reachable on port 8081 externally
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
@@ -24,15 +24,15 @@ services:
     build:
       context: ./frontend
       args:
-        # Default to backend container API if not overridden
+        # The frontend will call the backend inside Docker by this internal name
         - VITE_API_BASE=http://api:8080
     depends_on:
       - api
     ports:
-      - "3000:80"
+      - "8085:80"         # host:container → Web UI served on port 8085
     restart: unless-stopped
 
-  # Optional Postgres service if you want to switch from SQLite
+  # Optional Postgres service if you want to switch from SQLite later
   # postgres:
   #   image: postgres:16-alpine
   #   environment:
