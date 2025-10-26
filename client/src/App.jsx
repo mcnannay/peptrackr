@@ -1,48 +1,29 @@
+
+
+/* --- Server bootstrap: hydrate from server on first load --- */
+(function () {
+  try {
+    fetch('/api/storage/all').then(r => r.ok ? r.json() : null).then(data => {
+      if (data && typeof data === 'object') {
+        for (const [k, v] of Object.entries(data)) {
+          try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+        }
+        try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+      }
+    }).catch(() => {});
+  } catch (e) {}
+})();
+/* --- End bootstrap --- */
+
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler, Legend } from 'chart.js'
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler, Legend)
 
 // storage utils
-const load=(k,f)=>{ 
-  try {
-    const v = localStorage.getItem(k);
-    
-// --- Server bootstrap: hydrate localStorage from server on first load ---
-(async () => {
-  try {
-    const res = await fetch('/api/storage/all');
-    if (res.ok) {
-      const data = await res.json();
-      if (data && typeof data === 'object') {
-        for (const [k, v] of Object.entries(data)) {
-          try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {}
-        }
-        try { window.dispatchEvent(new Event('storage')); } catch(e) {}
-      }
-    }
-  } catch(e){}
-})();
-// --- End bootstrap ---
-return v ? JSON.parse(v) : f;
-  } catch(e){ 
-    return f; 
-  }
-}, 
-save=(k,v)=>{
-  try {
-    localStorage.setItem(k, JSON.stringify(v));
-  } catch(e) {}
-  // write-through to server for persistence
-  try {
-    fetch('/api/storage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: k, value: v })
-    }).catch(()=>{});
-  } catch(e){}
-};
-const h=hex.replace('#','');const n=parseInt(h.length===3?h.split('').map(c=>c+c).join(''):h,16);const r=(n>>16)&255,g=(n>>8)&255,b=n&255;return `rgba(${r}, ${g}, ${b}, ${a})`}
+const load=(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}}, save=(k,v)=>localStorage.setItem(k,JSON.stringify(v))
+const LN2=Math.log(2)
+const hexToRgba=(hex,a=1)=>{if(!hex)return `rgba(96,165,250,${a})`;const h=hex.replace('#','');const n=parseInt(h.length===3?h.split('').map(c=>c+c).join(''):h,16);const r=(n>>16)&255,g=(n>>8)&255,b=n&255;return `rgba(${r}, ${g}, ${b}, ${a})`}
 
 // defaults
 const DEFAULT_MEDS=[{id:'m1',name:'ExampleMed A',halfLifeHours:24,everyDays:7,color:'#60a5fa',ka:1.0}]
@@ -579,3 +560,33 @@ function Vial({totalMl, drawMl}){
 }
 
 export { }
+
+
+/* --- Server write-through shim --- */
+(function () {
+  const post = (k, v) => {
+    try {
+      fetch('/api/storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: k, value: v })
+      }).catch(() => {});
+    } catch (e) {}
+  };
+  try {
+    if (typeof save === 'function') {
+      const __origSave = save;
+      window.save = (k, v) => {
+        try { __origSave(k, v); } catch (e) {}
+        post(k, v);
+      };
+    } else {
+      window.save = (k, v) => {
+        try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+        post(k, v);
+      };
+    }
+  } catch (e) {}
+})();
+/* --- End shim --- */
+
