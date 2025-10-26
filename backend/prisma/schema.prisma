@@ -21,6 +21,7 @@ model Med {
   halfLifeDays Float
   freqDays     Int
   color        String
+  absorptionHalfLifeHours Float @default(0)
   shots        Shot[]
 }
 

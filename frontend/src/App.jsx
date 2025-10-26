@@ -1,7 +1,36 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Home, Settings, Weight as WeightIcon, Syringe, Calculator, Moon, Sun, ChevronLeft, ChevronRight, Upload, Download, Trash2, Edit3 } from 'lucide-react'
+import { Home, Settings, Weight as WeightIcon, Syringe, Calculator, Moon, Sun, ChevronLeft, ChevronRight, Upload, Download, Trash2, Edit3, Info } from 'lucide-react'
+
+
+function ToggleChip({options,value,onChange,theme}){
+  const isDark = theme==='dark';
+  return (
+    <div style={{display:'inline-flex',gap:8, background: isDark?'#0b0b0c':'#ffffff', border:'1px solid #27272a', borderRadius:12, padding:4}}>
+      {options.map(opt=>{
+        const active = value===opt.value;
+        return (
+          <button key={opt.value} type="button" onClick={()=>onChange(opt.value)}
+            style={{
+              all:'unset', cursor:'pointer', padding:'8px 12px', borderRadius:8,
+              background: active ? (isDark?'#111827':'#e5e7eb') : 'transparent',
+              border: active ? '1px solid #3f3f46' : '1px solid transparent',
+              outline: active ? (isDark?'2px solid #4f46e5':'2px solid #6366f1') : 'none',
+              outlineOffset: 0,
+              color: active ? (isDark?'#ffffff':'#111827') : (isDark?'#cbd5e1':'#334155'),
+              fontSize:12
+            }}>
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+
+const VERSION = '0.4.5'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, ReferenceLine } from 'recharts'
 
 const dayMs = 24*60*60*1000
@@ -103,11 +132,12 @@ export default function App(){
 
   return (
     <div style={{minHeight:'100vh',color:'#e4e4e7',display:'flex',flexDirection:'column'}}>
-      <div style={{position:'sticky',top:0,backdropFilter:'blur(6px)',background: theme==='dark'?'#09090bb3':'#ffffffb3', borderBottom:'1px solid #27272a'}}>
+      <div style={{position:'sticky',top:0,backdropFilter:'blur(6px)',background: theme==='dark' ? '#0b0b0c' : '#ffffff', borderBottom:'1px solid #27272a'}}>
         <div style={{maxWidth:420,margin:'0 auto',padding:'12px 16px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <PepWordmark/>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <span style={{fontSize:12,color:'#a1a1aa'}}>{activeUser?.name||'User'}</span>
+            <span style={{fontSize:11,padding:'4px 8px',borderRadius:999,border:'1px solid #3f3f46',background:'#111827',color:'#e5e7eb'}}>v{VERSION}</span>
             <button onClick={async ()=>{ await api.setSettings({theme: theme==='dark'?'light':'dark'}) ; refresh() }} style={{padding:8,border:'1px solid #3f3f46',borderRadius:12}}>
               {theme==='dark'? <Sun size={18}/> : <Moon size={18}/>}
             </button>
@@ -121,17 +151,48 @@ export default function App(){
       {tab==='weight' && <WeightScreen state={state} refresh={refresh} />}
       {tab==='calc' && <CalcScreen />}
 
-      <nav style={{position:'sticky',bottom:0, borderTop:'1px solid #27272a', background: theme==='dark'?'#09090bb3':'#ffffffe6', backdropFilter:'blur(6px)'}}>
+      <nav style={{position:'sticky',bottom:0, borderTop:'1px solid #27272a', background: theme==='dark' ? '#0b0b0c' : '#ffffff'}}>
         <div style={{maxWidth:420,margin:'0 auto',padding:'8px',display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'4px'}}>
           {TABS.map(t => {
             const active = tab===t.key
             const Icon = t.icon
             return (
-              <button key={t.key} onClick={()=>setTab(t.key)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,color:active?'white':'#a1a1aa'}}>
-                <div style={{padding:8,borderRadius:16,background: active?'#18181b':'#0b0b0c', border: '1px solid #27272a'}}><Icon size={22}/></div>
-                <span style={{fontSize:10}}>{t.label}</span>
-              </button>
-            )
+  <button
+    key={t.key}
+    type="button"
+    onClick={() => setTab(t.key)}
+    style={{
+      all: 'unset',
+      cursor: 'pointer',
+      WebkitTapHighlightColor: 'transparent',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 4,
+      color: active
+        ? (theme === 'dark' ? '#ffffff' : '#111827')
+        : (theme === 'dark' ? '#cbd5e1' : '#334155')
+    }}
+  >
+    <div
+      style={{
+        padding: 10,
+        borderRadius: 14,
+        background: active
+          ? (theme === 'dark' ? '#111827' : '#e5e7eb')
+          : 'transparent',
+        border: active ? '1px solid #3f3f46' : '1px solid transparent',
+        outline: active
+          ? (theme === 'dark' ? '2px solid #4f46e5' : '2px solid #6366f1')
+          : 'none',
+        outlineOffset: 0
+      }}
+    >
+      <Icon size={22} strokeWidth={2.2} />
+    </div>
+    <span style={{ fontSize: 10 }}>{t.label}</span>
+  </button>
+)
           })}
         </div>
       </nav>
