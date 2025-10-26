@@ -23,6 +23,6 @@ COPY --from=builder /app/client/dist/ ./server/public/
 VOLUME ["/data"]
 ENV DATA_DIR=/data
 ENV PORT=8080  # INTERNAL PORT MUST BE 8080
-
 EXPOSE 8080
+
 CMD ["node", "server/index.js"]

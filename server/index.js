@@ -15,18 +15,19 @@ sqlite3.verbose();
 sqlite3.Database.prototype.configure && sqlite3.Database.prototype.configure('busyTimeout', 5000);
 const db = new sqlite3.Database(dbFile);
 
-// Init schema
 db.serialize(() => {
   db.run('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)');
 });
 
 const app = express();
-const PORT = process.env.PORT || 8080; // INTERNAL PORT MUST REMAIN 8080
+const PORT = process.env.PORT || 8080; // INTERNAL PORT MUST BE 8080
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '2mb' }));
+
+// Health
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// Get all
+// API
 app.get('/api/storage/all', (req, res) => {
   db.all('SELECT key, value FROM kv', [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -40,7 +41,6 @@ app.get('/api/storage/all', (req, res) => {
   });
 });
 
-// Get one
 app.get('/api/storage/:key', (req, res) => {
   db.get('SELECT key, value FROM kv WHERE key = ?', [req.params.key], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -51,7 +51,6 @@ app.get('/api/storage/:key', (req, res) => {
   });
 });
 
-// Upsert one
 app.post('/api/storage', (req, res) => {
   const { key, value } = req.body || {};
   if (!key) return res.status(400).json({ error: 'key required' });
@@ -63,7 +62,6 @@ app.post('/api/storage', (req, res) => {
   });
 });
 
-// Bulk upsert
 app.post('/api/storage/bulk', (req, res) => {
   const { data } = req.body || {};
   if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
@@ -83,22 +81,36 @@ app.post('/api/storage/bulk', (req, res) => {
   });
 });
 
-// Static client
+// Static client + HTML injection of bootstrap state (window.__PEP_BOOT__)
 const distDir = path.join(__dirname, 'public');
-if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir));
-  app.get('*', (req, res) => {
-    const idx = path.join(distDir, 'index.html');
-    if (fs.existsSync(idx)) return res.sendFile(idx);
-    res.status(200).send('OK');
-  });
-} else {
-  console.warn('[warn] public/ not found at', distDir);
-  app.get('*', (req, res) => res.status(200).send('OK'));
+app.use(express.static(distDir));
+
+function injectBootstrap(html, obj) {
+  const json = JSON.stringify(obj || {});
+  const script = `<script>window.__PEP_BOOT__=${json};</script>`;
+  return html.replace('</head>', script + '\n</head>');
 }
 
+app.get('*', (req, res) => {
+  const indexPath = path.join(distDir, 'index.html');
+  fs.readFile(indexPath, 'utf8', (err, html) => {
+    if (err) return res.status(200).send('OK');
+    db.all('SELECT key, value FROM kv', [], (e, rows) => {
+      if (e) return res.status(500).send('DB error');
+      const obj = {};
+      for (const r of rows) {
+        let v = r.value;
+        try { v = JSON.parse(r.value); } catch(_) {}
+        obj[r.key] = v;
+      }
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(injectBootstrap(html, obj));
+    });
+  });
+});
+
 app.listen(PORT, () => {
-  console.log(`PepTrackr (SQLite sync-poll) on http://0.0.0.0:${PORT}`);
+  console.log(`PepTrackr (Direct DB) on http://0.0.0.0:${PORT}`);
 });
 
 process.on('uncaughtException', (e)=>console.error('[fatal] uncaught', e));

@@ -2,7 +2,7 @@ services:
   peptrackr:
     build: .
     container_name: peptrackr
-    ports: ["8085:8080"]
+    ports: ["8085:8080"]   # host:container
     environment: ["DATA_DIR=/data"]
     volumes: ["peptrackr_data:/data"]
     restart: unless-stopped
