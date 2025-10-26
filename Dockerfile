@@ -1,4 +1,4 @@
-# Build client (original UI preserved)
+# Build client (unchanged UI)
 FROM node:20-alpine AS client
 WORKDIR /app/client
 COPY client/package.json ./
@@ -15,6 +15,7 @@ ENV PORT=8080
 COPY server/package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY server ./
+# Serve client
 COPY --from=client /app/client/dist ./public
 EXPOSE 8080
 CMD ["node", "index.js"]
