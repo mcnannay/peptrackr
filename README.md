@@ -1,48 +1,40 @@
-# PepTrackr (Server-backed, Fixed API Prefix)
+# PepTrackr with Server-Side Storage (SQLite + Docker Volume)
 
-## Why this works behind any reverse proxy
-- The API is mounted at an absolute path **/peptrackr-api** in the server.
-- The client always calls **/peptrackr-api/...** (absolute), so it doesn't depend on where the app is mounted (/, /peptrackr/, etc.).
-- Configure your reverse proxy to route **/peptrackr-api/** to the same container as the app.
+This build keeps your original client and injects a *non-intrusive* storage shim:
+- On load, it **hydrates** from the server (`/api/storage/all`) into `localStorage`.
+- Every `localStorage.setItem` is **mirrored** to the server (`POST /api/storage`).
+Storage is persisted in a Docker **named volume** at `/data/app.db` (SQLite file).
 
-## Build & Run (compose)
-docker compose up -d --build
-# open http://localhost:8085
+## Run locally with Docker
+```bash
+sudo docker build --no-cache -t peptrackr-sqlite .
+sudo docker run -d --name peptrackr -p 8080:8080 -v peptrackr_data:/data peptrackr-sqlite
+# open http://localhost:8080
+sudo docker logs -f peptrackr
+```
 
-## Direct docker
-docker build -t peptrackr-test .
-docker run -d --name peptrackr -p 8085:8080 -v peptrackr_data:/data peptrackr-test
+## With docker-compose (Portainer-friendly)
+Point Portainer at this repo or use:
+```yaml
+services:
+  peptrackr:
+    build: .
+    container_name: peptrackr
+    ports: ["8080:8080"]
+    environment: ["DATA_DIR=/data"]
+    volumes: ["peptrackr_data:/data"]
+    restart: unless-stopped
 
-## Reverse proxy (examples)
+volumes:
+  peptrackr_data:
+```
 
-### nginx (subpath /peptrackr for UI + fixed API path)
-location /peptrackr/ {
-  proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto $scheme;
-  rewrite ^/peptrackr/(.*)$ /$1 break;
-  proxy_pass http://127.0.0.1:8085/;
-}
+## API
+- `GET /api/storage/all` → returns all key/values
+- `GET /api/storage/:key` → returns one
+- `POST /api/storage` with `{ "key": "...", "value": <any JSON or string> }`
 
-location /peptrackr-api/ {
-  proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto $scheme;
-  proxy_pass http://127.0.0.1:8085/peptrackr-api/;
-}
-
-### Caddy
-your.domain {
-  handle_path /peptrackr/* {
-    reverse_proxy 127.0.0.1:8085
-  }
-  handle_path /peptrackr-api/* {
-    reverse_proxy 127.0.0.1:8085
-  }
-}
-
-## API quick checks
-curl http://localhost:8085/peptrackr-api/storage/all
-docker exec -it peptrackr sh -lc 'cat /data/db.json'
+## Notes
+- No edits to your React components were required; shim is loaded via `index.html` → `/storage-shim.js`.
+- Data survives container restarts and is shared by all devices using the same server URL.
+- DB lives in the Docker volume `peptrackr_data` as `/data/app.db`.

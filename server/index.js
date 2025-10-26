@@ -1,80 +1,72 @@
 import express from 'express';
-import { Low } from 'lowdb';
-import { JSONFile } from 'lowdb/node';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import sqlite3 from 'sqlite3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const dataDir = process.env.DATA_DIR || '/data';
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-const dbFile = path.join(dataDir, 'db.json');
+const dbFile = path.join(dataDir, 'app.db');
 
-const adapter = new JSONFile(dbFile);
-const db = new Low(adapter, { storage: {} });
-await db.read();
-db.data ||= { storage: {} };
+sqlite3.verbose();
+const db = new sqlite3.Database(dbFile);
+
+// Create table if not exists
+db.serialize(() => {
+  db.run('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)');
+});
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 
-// Mount API under a fixed absolute prefix so reverse-proxy path doesn't matter
-const api = express.Router();
-
-api.get('/storage/all', async (req, res) => {
-  await db.read();
-  res.json(db.data.storage || {});
+// Get all keys
+app.get('/api/storage/all', (req, res) => {
+  db.all('SELECT key, value FROM kv', [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const obj = {};
+    for (const r of rows) {
+      let v = r.value;
+      try { v = JSON.parse(r.value); } catch(_) {}
+      obj[r.key] = v;
+    }
+    res.json(obj);
+  });
 });
 
-api.get('/storage/:key', async (req, res) => {
-  const { key } = req.params;
-  await db.read();
-  const v = db.data.storage?.[key];
-  if (typeof v === 'undefined') return res.status(404).json({ error: 'not found' });
-  res.json({ key, value: v });
+// Get one key
+app.get('/api/storage/:key', (req, res) => {
+  db.get('SELECT key, value FROM kv WHERE key = ?', [req.params.key], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let v = row.value;
+    try { v = JSON.parse(row.value); } catch(_) {}
+    res.json({ key: row.key, value: v });
+  });
 });
 
-api.post('/storage', async (req, res) => {
+// Upsert a key
+app.post('/api/storage', (req, res) => {
   const { key, value } = req.body || {};
   if (!key) return res.status(400).json({ error: 'key required' });
-
-// Bulk upsert: { entries: { key: value, ... } }
-api.post('/storage/bulk', async (req, res) => {
-  const { entries } = req.body || {};
-  if (!entries || typeof entries !== 'object') {
-    return res.status(400).json({ error: 'entries object required' });
-  }
-  await db.read();
-  db.data.storage ||= {};
-  for (const [k, v] of Object.entries(entries)) {
-    db.data.storage[k] = v;
-  }
-  await db.write();
-  res.json({ ok: true, count: Object.keys(entries).length });
+  const text = (typeof value === 'string') ? value : JSON.stringify(value);
+  db.run('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', [key, text], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ ok: true });
+  });
 });
-
-  await db.read();
-  db.data.storage ||= {};
-  db.data.storage[key] = value;
-  await db.write();
-  res.json({ ok: true });
-});
-
-app.use('/peptrackr-api', api);
 
 // Serve built client
 const distDir = path.join(__dirname, 'public');
 app.use(express.static(distDir));
-
-// SPA fallback
 app.get('*', (req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(`PepTrackr server running on http://0.0.0.0:${PORT} (API at /peptrackr-api/)`);
+  console.log(`PepTrackr (SQLite) running on http://0.0.0.0:${PORT}`);
 });

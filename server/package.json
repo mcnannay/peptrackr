@@ -1,5 +1,5 @@
 {
-  "name": "peptrackr-server",
+  "name": "peptrackr-server-sqlite",
   "private": true,
   "type": "module",
   "version": "1.0.0",
@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "lowdb": "^7.0.1"
+    "sqlite3": "^5.1.7"
   }
 }
