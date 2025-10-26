@@ -9,11 +9,8 @@ ENV VITE_APP_VERSION=$BUILD_VERSION
 RUN echo "BUILD_VERSION=$BUILD_VERSION" > /build-version.txt
 RUN echo "CACHE_BUSTER=$CACHE_BUSTER" > /cache-buster.txt
 
-# Copy manifest files first for better layer caching
-COPY package.json ./
-# Copy lockfile only if it exists (build won’t fail if it doesn’t)
-# This keeps the conditional ci/install logic working
-COPY package-lock.json ./ || true
+# Copy manifests (if lockfile exists, it will be included by the glob)
+COPY package*.json ./
 
 # Make npm tolerant in constrained builders (Portainer, proxies, peer deps)
 RUN npm set legacy-peer-deps true \
@@ -25,7 +22,7 @@ RUN npm set legacy-peer-deps true \
  && npm set fetch-retry-maxtimeout 120000 \
  && npm set fetch-timeout 120000
 
-# Install deps: prefer ci when lockfile present; otherwise safe install
+# Install deps: prefer ci when lockfile is present; else safe install
 RUN if [ -f package-lock.json ]; then \
        echo "Using npm ci (lockfile found)"; \
        npm ci --no-audit --no-fund --omit=optional; \
