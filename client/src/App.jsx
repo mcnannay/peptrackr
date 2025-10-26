@@ -1,16 +1,21 @@
 
 
-/* --- Server bootstrap: hydrate from server on first load --- */
+/* --- Reverse-proxy safe API helper + bootstrap hydrate --- */
+const apiUrl = (p) => new URL(p, window.location.href).toString();
+
 (function () {
   try {
-    fetch('/api/storage/all').then(r => r.ok ? r.json() : null).then(data => {
-      if (data && typeof data === 'object') {
-        for (const [k, v] of Object.entries(data)) {
-          try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+    fetch(apiUrl('api/storage/all'))
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && typeof data === 'object') {
+          for (const [k, v] of Object.entries(data)) {
+            try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+          }
+          try { window.dispatchEvent(new Event('storage')); } catch (e) {}
         }
-        try { window.dispatchEvent(new Event('storage')); } catch (e) {}
-      }
-    }).catch(() => {});
+      })
+      .catch(() => {});
   } catch (e) {}
 })();
 /* --- End bootstrap --- */
@@ -562,31 +567,34 @@ function Vial({totalMl, drawMl}){
 export { }
 
 
-/* --- Server write-through shim --- */
+/* --- Server write-through for ALL localStorage writes (reverse-proxy safe) --- */
 (function () {
   const post = (k, v) => {
+    let payload = v;
+    try { payload = JSON.parse(v); } catch (_) { payload = v; }
     try {
-      fetch('/api/storage', {
+      fetch(apiUrl('api/storage'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: k, value: v })
+        body: JSON.stringify({ key: k, value: payload })
       }).catch(() => {});
     } catch (e) {}
   };
-  try {
-    if (typeof save === 'function') {
-      const __origSave = save;
-      window.save = (k, v) => {
-        try { __origSave(k, v); } catch (e) {}
-        post(k, v);
-      };
-    } else {
-      window.save = (k, v) => {
-        try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
-        post(k, v);
-      };
-    }
-  } catch (e) {}
+
+  const orig = window.localStorage.setItem.bind(window.localStorage);
+  window.localStorage.setItem = (k, v) => {
+    try { orig(k, v); } catch (_) {}
+    post(k, v);
+  };
+
+  if (typeof window.save === 'function') {
+    const __origSave = window.save;
+    window.save = (k, v) => {
+      try { __origSave(k, v); } catch (_) {}
+      try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {}
+      post(k, JSON.stringify(v));
+    };
+  }
 })();
-/* --- End shim --- */
+/* --- End write-through shim --- */
 

@@ -1,29 +1,18 @@
-# PepTrackr (server-backed storage)
+# PepTrackr (Server-backed, Reverse-Proxy Safe)
 
-This package converts the original local-only Vite app into a server-backed app with persistent storage.
-It adds a tiny Express API that persists data to a JSON file mounted at `/data` inside the container.
+- Client uses **relative API URLs** via `apiUrl('api/...')`, so it works at `/` or any sub-path (e.g., `/peptrackr/`).
+- Hydrates from server on load; hooks all `localStorage.setItem` to POST changes to the server.
+- Server persists to `/data/db.json` (via Docker volume).
+- Exposes container port **8080**; compose maps **8085:8080**.
 
-## What changed
-- **Client (`client/`)**: The `save()` helper now *writes through* to `/api/storage`. On first load, the app also **hydrates** from `/api/storage/all` so your data is restored from the server if you clear the browser.
-- **Server (`server/`)**: Provides `GET /api/storage/all`, `GET /api/storage/:key`, `POST /api/storage` (
-`{ key, value }`).
-- **Docker**: A single-container image builds the Vite client and serves it via the Express server. A named volume keeps data on the server.
-
-## Quick start (Portainer/GitHub)
-1. Push this folder to your GitHub repo.
-2. In Portainer, create a new **Stack** and point it at your repo (or paste the `docker-compose.yml`).
-3. Deploy the stack.
-4. Visit `http://<your-host>:8080` and use the app.
-
-Data persists in the named volume `peptrackr_data`.
-
-## Local dev
-```bash
-# Build and run
+## Build & Run (compose)
 docker compose up -d --build
-open http://localhost:8080
-```
+# open http://localhost:8085
 
-## Notes
-- This approach keeps your existing UI/logic. It simply mirrors the app's `save()`s to the server and bootstraps from the server on load.
-- If you ever need to back up or migrate data, copy the JSON file from the container volume (e.g., `/var/lib/docker/volumes/<stack>_peptrackr_data/_data/db.json`).
+## Direct docker
+docker build -t peptrackr-test .
+docker run -d --name peptrackr -p 8085:8080 -v peptrackr_data:/data peptrackr-test
+
+## API quick checks
+curl http://localhost:8085/api/storage/all
+docker exec -it peptrackr sh -lc 'cat /data/db.json'
