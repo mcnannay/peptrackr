@@ -1,122 +1,92 @@
 import express from 'express';
-import http from 'http';
-import { Server } from 'socket.io';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { Pool } from 'pg';
+import fs from 'fs';
+import sqlite3 from 'sqlite3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = process.env.PORT || 8080;
+const dataDir = process.env.DATA_DIR || '/data';
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+const dbFile = path.join(dataDir, 'app.db');
 
-// DB
-const pool = new Pool({
-  host: process.env.PGHOST,
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-  database: process.env.PGDATABASE,
+sqlite3.verbose();
+const db = new sqlite3.Database(dbFile);
+
+// Create table if not exists
+db.serialize(() => {
+  db.run('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)');
 });
 
-async function initDb(){
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS kv (
-      key TEXT PRIMARY KEY,
-      value JSONB,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-}
-
-async function getAll(){
-  const { rows } = await pool.query('SELECT key, value FROM kv');
-  const out = {}; for (const r of rows) out[r.key] = r.value; return out;
-}
-async function setKV(key, value){
-  await pool.query(
-    `INSERT INTO kv(key, value, updated_at) VALUES ($1, $2, NOW())
-     ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
-    [key, value]
-  );
-}
-async function bulkSetKV(obj){
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const entries = Object.entries(obj || {});
-    if (entries.length === 0) await client.query('DELETE FROM kv');
-    for (const [k, v] of entries){
-      await client.query(
-        `INSERT INTO kv(key, value, updated_at) VALUES ($1, $2, NOW())
-         ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
-        [k, v]
-      );
-    }
-    await client.query('COMMIT');
-    return Object.keys(obj || {}).length;
-  } catch(e){ await client.query('ROLLBACK'); throw e; }
-  finally { client.release(); }
-}
-
-// App + Socket.IO
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+const PORT = process.env.PORT || 8085;
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '1mb' }));
 
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: true, credentials: true } });
-
-io.on('connection', (socket) => {
-  socket.on('kv:set', async ({ key, value }) => {
-    try { await setKV(key, value); io.emit('kv:change', { keys:[key] }); } catch(e){}
-  });
-  socket.on('kv:bulk', async ({ data }) => {
-    try { await bulkSetKV(data || {}); io.emit('kv:change', { keys: Object.keys(data || {}) }); } catch(e){}
+// Get all keys
+app.get('/api/storage/all', (req, res) => {
+  db.all('SELECT key, value FROM kv', [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const obj = {};
+    for (const r of rows) {
+      let v = r.value;
+      try { v = JSON.parse(r.value); } catch(_) {}
+      obj[r.key] = v;
+    }
+    res.json(obj);
   });
 });
 
-// REST fallback (also used by override.js reconcile)
-app.get('/api/storage/all', async (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  res.json(await getAll());
+// Get one key
+app.get('/api/storage/:key', (req, res) => {
+  db.get('SELECT key, value FROM kv WHERE key = ?', [req.params.key], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let v = row.value;
+    try { v = JSON.parse(row.value); } catch(_) {}
+    res.json({ key: row.key, value: v });
+  });
 });
-app.post('/api/storage', async (req, res) => {
-  res.set('Cache-Control', 'no-store');
+
+// Upsert a key
+app.post('/api/storage', (req, res) => {
   const { key, value } = req.body || {};
-  if (!key) return res.status(400).json({error:'key required'});
-  await setKV(key, value);
-  res.json({ok:true});
-  io.emit('kv:change', { keys:[key] });
+  if (!key) return res.status(400).json({ error: 'key required' });
+  const text = (typeof value === 'string') ? value : JSON.stringify(value);
+  db.run('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', [key, text], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ ok: true });
+  });
 });
-app.post('/api/storage/bulk', async (req, res) => {
-  res.set('Cache-Control', 'no-store');
+
+// Serve built client
+
+// Bulk upsert: { data: { key: value, ... } }
+app.post('/api/storage/bulk', (req, res) => {
   const { data } = req.body || {};
-  if (!data || typeof data !== 'object') return res.status(400).json({error:'data object required'});
-  const n = await bulkSetKV(data);
-  res.json({ok:true, count:n});
-  io.emit('kv:change', { keys:Object.keys(data) });
+  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
+  const entries = Object.entries(data);
+  if (!entries.length) return res.json({ ok: true, count: 0 });
+  const stmt = db.prepare('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+  db.serialize(() => {
+    for (const [k, v] of entries) {
+      const text = (typeof v === 'string') ? v : JSON.stringify(v);
+      stmt.run(k, text);
+    }
+  });
+  stmt.finalize(err => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ ok: true, count: entries.length });
+  });
 });
 
-// Static client (unchanged)
-const publicDir = path.join(__dirname, 'public');
-app.use(express.static(publicDir));
-
-// Inject BOOT + override loader at serve-time (no source edits)
-app.get('*', async (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  const indexPath = path.join(publicDir, 'index.html');
-  if (!fs.existsSync(indexPath)) return res.status(404).send('client not built');
-  const html = fs.readFileSync(indexPath, 'utf8');
-  let boot = {};
-  try { boot = await getAll(); } catch {}
-  const injected = html.replace(
-    '</head>',
-    `<script>window.__PEP_BOOT__=${JSON.stringify(boot)}</script>
-     <script src="/socket.io/socket.io.js"></script>
-     <script src="/storage-override.js"></script></head>`
-  );
-  res.send(injected);
+const distDir = path.join(__dirname, 'public');
+app.use(express.static(distDir));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(distDir, 'index.html'));
 });
 
-await initDb();
-server.listen(PORT, () => console.log('listening on', PORT));
+app.listen(PORT, () => {
+  console.log(`PepTrackr (SQLite) running on http://0.0.0.0:${PORT}`);
+});

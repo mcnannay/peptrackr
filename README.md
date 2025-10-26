@@ -1,25 +1,40 @@
-# PepTrackr — Direct-to-Database Storage (No localStorage)
+# PepTrackr with Server-Side Storage (SQLite + Docker Volume)
 
-- INTERNAL PORT is **8080**. docker-compose maps **8085 → 8080** (keep this mapping).
-- Client **does not persist** to browser storage. A facade replaces localStorage with an **in-memory** map.
-- Server injects current DB into `window.__PEP_BOOT__` so the app starts with data synchronously.
-- All writes go **straight to SQLite** via `/api/storage` or `/api/storage/bulk`.
-- Data lives in the Docker volume `peptrackr_data` at `/data/app.db`.
+This build keeps your original client and injects a *non-intrusive* storage shim:
+- On load, it **hydrates** from the server (`/api/storage/all`) into `localStorage`.
+- Every `localStorage.setItem` is **mirrored** to the server (`POST /api/storage`).
+Storage is persisted in a Docker **named volume** at `/data/app.db` (SQLite file).
 
-## Build & Run
+## Run locally with Docker
 ```bash
-sudo docker build --no-cache -t peptrackr-directdb .
-sudo docker run -d --name peptrackr -p 8085:8080 -v peptrackr_data:/data peptrackr-directdb
-# http://localhost:8085
+sudo docker build --no-cache -t peptrackr-sqlite .
+sudo docker run -d --name peptrackr -p 8085:8085 -v peptrackr_data:/data peptrackr-sqlite
+# open http://localhost:8085
 sudo docker logs -f peptrackr
 ```
 
-## Verify
-```bash
-curl http://localhost:8085/api/storage/all
-sudo docker exec -it peptrackr sh -lc 'ls -l /data && sqlite3 /data/app.db ".tables" && sqlite3 /data/app.db "select count(*) from kv"'
+## With docker-compose (Portainer-friendly)
+Point Portainer at this repo or use:
+```yaml
+services:
+  peptrackr:
+    build: .
+    container_name: peptrackr
+    ports: ["8085:8085"]
+    environment: ["DATA_DIR=/data"]
+    volumes: ["peptrackr_data:/data"]
+    restart: unless-stopped
+
+volumes:
+  peptrackr_data:
 ```
 
+## API
+- `GET /api/storage/all` → returns all key/values
+- `GET /api/storage/:key` → returns one
+- `POST /api/storage` with `{ "key": "...", "value": <any JSON or string> }`
+
 ## Notes
-- JSON backup imports are detected via FileReader hook; a full snapshot is pushed after import.
-- If your app uses other persistence methods, the facade ensures compatibility without changing your components.
+- No edits to your React components were required; shim is loaded via `index.html` → `/storage-shim.js`.
+- Data survives container restarts and is shared by all devices using the same server URL.
+- DB lives in the Docker volume `peptrackr_data` as `/data/app.db`.
