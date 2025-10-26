@@ -15,20 +15,18 @@ sqlite3.verbose();
 sqlite3.Database.prototype.configure && sqlite3.Database.prototype.configure('busyTimeout', 5000);
 const db = new sqlite3.Database(dbFile);
 
-// Create table if not exists
+// Init schema
 db.serialize(() => {
   db.run('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)');
 });
 
 const app = express();
-const PORT = process.env.PORT || 8085;
+const PORT = process.env.PORT || 8080; // INTERNAL PORT MUST REMAIN 8080
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
+app.get('/health', (req, res) => res.json({ ok: true }));
 
-// Health check
-app.get('/health', (req,res)=>res.json({ok:true}));
-
-// Get all keys
+// Get all
 app.get('/api/storage/all', (req, res) => {
   db.all('SELECT key, value FROM kv', [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -42,7 +40,7 @@ app.get('/api/storage/all', (req, res) => {
   });
 });
 
-// Get one key
+// Get one
 app.get('/api/storage/:key', (req, res) => {
   db.get('SELECT key, value FROM kv WHERE key = ?', [req.params.key], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -53,20 +51,19 @@ app.get('/api/storage/:key', (req, res) => {
   });
 });
 
-// Upsert a key
+// Upsert one
 app.post('/api/storage', (req, res) => {
   const { key, value } = req.body || {};
   if (!key) return res.status(400).json({ error: 'key required' });
   const text = (typeof value === 'string') ? value : JSON.stringify(value);
   db.run('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', [key, text], (err) => {
     if (err) return res.status(500).json({ error: err.message });
+    console.log('[storage] upsert', key);
     res.json({ ok: true });
   });
 });
 
-// Serve built client
-
-// Bulk upsert: { data: { key: value, ... } }
+// Bulk upsert
 app.post('/api/storage/bulk', (req, res) => {
   const { data } = req.body || {};
   if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
@@ -81,10 +78,12 @@ app.post('/api/storage/bulk', (req, res) => {
   });
   stmt.finalize(err => {
     if (err) return res.status(500).json({ error: err.message });
+    console.log('[storage] bulk upsert', entries.length, 'keys');
     res.json({ ok: true, count: entries.length });
   });
 });
 
+// Static client
 const distDir = path.join(__dirname, 'public');
 if (fs.existsSync(distDir)) {
   app.use(express.static(distDir));
@@ -99,14 +98,8 @@ if (fs.existsSync(distDir)) {
 }
 
 app.listen(PORT, () => {
-  console.log(`PepTrackr (SQLite) running on http://0.0.0.0:${PORT}`);
+  console.log(`PepTrackr (SQLite sync-poll) on http://0.0.0.0:${PORT}`);
 });
 
-
-// Global error handlers to avoid crashes
-process.on('uncaughtException', (err) => {
-  console.error('[fatal] uncaughtException:', err && err.stack || err);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('[fatal] unhandledRejection:', reason);
-});
+process.on('uncaughtException', (e)=>console.error('[fatal] uncaught', e));
+process.on('unhandledRejection', (e)=>console.error('[fatal] unhandled', e));

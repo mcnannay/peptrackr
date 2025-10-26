@@ -1,40 +1,43 @@
-# PepTrackr with Server-Side Storage (SQLite + Docker Volume)
+# PepTrackr (SQLite + Server Sync-Poll) — Internal 8080, Host 8085
 
-This build keeps your original client and injects a *non-intrusive* storage shim:
-- On load, it **hydrates** from the server (`/api/storage/all`) into `localStorage`.
-- Every `localStorage.setItem` is **mirrored** to the server (`POST /api/storage`).
-Storage is persisted in a Docker **named volume** at `/data/app.db` (SQLite file).
+- Server persists to `/data/app.db` (Docker named volume `peptrackr_data`).
+- Client syncs via write-through **and** 5s poll+reconcile, so importing a JSON backup on one device propagates to others.
+- INTERNAL PORT is **8080**. docker-compose maps host **8085 → 8080**.
 
-## Run locally with Docker
+## Build & Run
 ```bash
-sudo docker build --no-cache -t peptrackr-sqlite .
-sudo docker run -d --name peptrackr -p 8085:8085 -v peptrackr_data:/data peptrackr-sqlite
+sudo docker build --no-cache -t peptrackr-sqlite-syncpoll .
+sudo docker run -d --name peptrackr -p 8085:8080 -v peptrackr_data:/data peptrackr-sqlite-syncpoll
 # open http://localhost:8085
 sudo docker logs -f peptrackr
 ```
 
-## With docker-compose (Portainer-friendly)
-Point Portainer at this repo or use:
+## Compose
 ```yaml
 services:
   peptrackr:
     build: .
     container_name: peptrackr
-    ports: ["8085:8085"]
+    ports: ["8085:8080"]
     environment: ["DATA_DIR=/data"]
     volumes: ["peptrackr_data:/data"]
     restart: unless-stopped
-
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 volumes:
   peptrackr_data:
 ```
 
-## API
-- `GET /api/storage/all` → returns all key/values
-- `GET /api/storage/:key` → returns one
-- `POST /api/storage` with `{ "key": "...", "value": <any JSON or string> }`
+## Verify server-side storage
+```bash
+curl http://localhost:8085/api/storage/all
+sudo docker exec -it peptrackr sh -lc 'ls -l /data && sqlite3 /data/app.db ".tables" && sqlite3 /data/app.db "select count(*) from kv"'
+```
 
 ## Notes
-- No edits to your React components were required; shim is loaded via `index.html` → `/storage-shim.js`.
-- Data survives container restarts and is shared by all devices using the same server URL.
-- DB lives in the Docker volume `peptrackr_data` as `/data/app.db`.
+- Sync-poll model ensures uploads/imports that bypass `setItem` still get pushed (bulk debounce + on-hide beacon) and pulled (5s interval).
+- If you serve behind a reverse proxy with a path prefix, change fetch URLs to relative (`"api/storage"`) or prepend your base path.

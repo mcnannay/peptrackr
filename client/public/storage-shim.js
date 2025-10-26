@@ -1,5 +1,4 @@
-// Injected storage shim: robust hydrate + write-through + bulk sync (SQLite server).
-
+// storage-shim.js: Server-backed sync using write-through + poll+reconcile.
 (function () {
   const POST = (url, body) => fetch(url, {
     method: 'POST',
@@ -7,80 +6,86 @@
     body: JSON.stringify(body)
   }).catch(() => {});
 
-  // Hydrate from server on first load
-  try {
-    fetch('/api/storage/all')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data && typeof data === 'object') {
-          for (const [k, v] of Object.entries(data)) {
-            try {
-              const payload = typeof v === 'string' ? v : JSON.stringify(v);
-              localStorage.setItem(k, payload);
-            } catch (e) {}
+  const pullAll = async () => {
+    try {
+      const r = await fetch('/api/storage/all', { cache: 'no-store' });
+      if (!r.ok) return;
+      const data = await r.json();
+      if (!data || typeof data !== 'object') return;
+      // Reconcile: write any server keys into localStorage (stringify non-strings)
+      for (const [k, v] of Object.entries(data)) {
+        try {
+          const payload = typeof v === 'string' ? v : JSON.stringify(v);
+          if (localStorage.getItem(k) !== payload) {
+            localStorage.setItem(k, payload);
           }
-          try { window.dispatchEvent(new Event('storage')); } catch (e) {}
-        }
-      })
-      .catch(() => {});
-  } catch (e) {}
-
-  // Debounced bulk sync of entire localStorage (handles JSON imports, clear(), etc.)
-  let bulkTimer = null;
-  const scheduleBulkSync = () => {
-    if (bulkTimer) clearTimeout(bulkTimer);
-    bulkTimer = setTimeout(() => {
-      try {
-        const data = {};
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          const raw = localStorage.getItem(k);
-          let v = raw;
-          try { v = JSON.parse(raw); } catch (_) { v = raw; }
-          data[k] = v;
-        }
-        POST('/api/storage/bulk', { data });
-      } catch (e) {}
-    }, 600); // debounce 600ms
+        } catch (_) {}
+      }
+    } catch (_) {}
   };
 
-  // Write-through for single writes + schedule bulk sync
-  const _origSetItem = localStorage.setItem.bind(localStorage);
+  const pushAll = async () => {
+    try {
+      const obj = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        const raw = localStorage.getItem(k);
+        let v = raw;
+        try { v = JSON.parse(raw); } catch (_) { v = raw; }
+        obj[k] = v;
+      }
+      await POST('/api/storage/bulk', { data: obj });
+    } catch (_) {}
+  };
+
+  // Initial hydrate
+  pullAll();
+
+  // Override single writes to be write-through + schedule bulk
+  let bulkTimer = null;
+  const scheduleBulk = () => {
+    if (bulkTimer) clearTimeout(bulkTimer);
+    bulkTimer = setTimeout(() => { pushAll(); }, 600);
+  };
+
+  const _setItem = localStorage.setItem.bind(localStorage);
   localStorage.setItem = (k, v) => {
-    try { _origSetItem(k, v); } catch (_) {}
-    // try immediate single upsert
+    try { _setItem(k, v); } catch (_) {}
+    // Immediate single upsert
     let payload = v;
     try { payload = JSON.parse(v); } catch (_) { payload = v; }
     POST('/api/storage', { key: k, value: payload });
-    scheduleBulkSync();
+    scheduleBulk();
   };
 
-  const _origRemoveItem = localStorage.removeItem.bind(localStorage);
+  const _removeItem = localStorage.removeItem.bind(localStorage);
   localStorage.removeItem = (k) => {
-    try { _origRemoveItem(k); } catch (_) {}
-    // reflect removal by resyncing entire state
-    scheduleBulkSync();
+    try { _removeItem(k); } catch (_) {}
+    scheduleBulk();
   };
 
-  const _origClear = localStorage.clear.bind(localStorage);
+  const _clear = localStorage.clear.bind(localStorage);
   localStorage.clear = () => {
-    try { _origClear(); } catch (_) {}
-    scheduleBulkSync();
+    try { _clear(); } catch (_) {}
+    scheduleBulk();
   };
 
-  // Also trigger bulk on page load complete and visibility changes (covers import flows)
-  window.addEventListener('load', scheduleBulkSync);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') scheduleBulkSync();
-  });
-
-  // Optional: wrap a global save(k,v) if app provides it
+  // If app defines a save(k,v), wrap it to ensure server push too
   if (typeof window.save === 'function') {
     const __origSave = window.save;
     window.save = (k, v) => {
       try { __origSave(k, v); } catch (_) {}
       try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {}
-      scheduleBulkSync();
+      scheduleBulk();
     };
   }
+
+  // Poll-and-reconcile every 5 seconds to catch bulk imports or missed writes
+  setInterval(pullAll, 5000);
+
+  // Also push on page hide/unload
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') pushAll();
+  });
+  window.addEventListener('beforeunload', () => { try { navigator.sendBeacon && navigator.sendBeacon('/api/storage/bulk', new Blob([JSON.stringify({ data: (()=>{const o={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);const raw=localStorage.getItem(k);let v=raw;try{v=JSON.parse(raw)}catch(_){v=raw}o[k]=v;}return o;})()})], {type:'application/json'})); } catch(_){} });
 })();

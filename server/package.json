@@ -1,5 +1,5 @@
 {
-  "name": "peptrackr-server-sqlite",
+  "name": "peptrackr-server-sqlite-syncpoll",
   "private": true,
   "type": "module",
   "version": "1.0.0",
