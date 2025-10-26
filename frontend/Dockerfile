@@ -1,25 +1,55 @@
-
-# Build stage
+# ---------- BUILD ----------
 FROM node:20-alpine AS build
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --no-audit --no-fund
-RUN npm config set legacy-peer-deps true \
- && npm config set fund false \
- && npm config set audit false \
- && npm install
-COPY . .
+
+# Cache-busting + visible version in UI
 ARG BUILD_VERSION=dev
+ARG CACHE_BUSTER=0
 ENV VITE_APP_VERSION=$BUILD_VERSION
+RUN echo "BUILD_VERSION=$BUILD_VERSION" > /build-version.txt
+RUN echo "CACHE_BUSTER=$CACHE_BUSTER" > /cache-buster.txt
+
+# Copy manifest files first for better layer caching
+COPY package.json ./
+# Copy lockfile only if it exists (build won’t fail if it doesn’t)
+# This keeps the conditional ci/install logic working
+COPY package-lock.json ./ || true
+
+# Make npm tolerant in constrained builders (Portainer, proxies, peer deps)
+RUN npm set legacy-peer-deps true \
+ && npm set fund false \
+ && npm set audit false \
+ && npm set progress=false \
+ && npm set fetch-retries 5 \
+ && npm set fetch-retry-factor 2 \
+ && npm set fetch-retry-maxtimeout 120000 \
+ && npm set fetch-timeout 120000
+
+# Install deps: prefer ci when lockfile present; otherwise safe install
+RUN if [ -f package-lock.json ]; then \
+       echo "Using npm ci (lockfile found)"; \
+       npm ci --no-audit --no-fund --omit=optional; \
+    else \
+       echo "No lockfile found; using npm install"; \
+       npm install --no-audit --no-fund --omit=optional; \
+    fi
+
+# Copy the rest and build
+COPY . .
 RUN npm run build
 
-# Serve with nginx and proxy /api to backend
+# ---------- RUNTIME ----------
 FROM nginx:1.27-alpine
 RUN apk add --no-cache curl
+
+# Clean any existing content to avoid stale assets
 RUN rm -rf /usr/share/nginx/html/*
+
+# Copy fresh build + a readable build stamp
 COPY --from=build /app/dist /usr/share/nginx/html
-# expose build version inside image
-RUN cp /build-version.txt /usr/share/nginx/html/__build.txt || true
+COPY --from=build /build-version.txt /usr/share/nginx/html/__build.txt
+
+# Use custom nginx config (no-cache index.html; immutable assets; /api proxy)
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 RUN rm -f /etc/nginx/conf.d/default.conf
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
