@@ -12,6 +12,7 @@ if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 const dbFile = path.join(dataDir, 'app.db');
 
 sqlite3.verbose();
+sqlite3.Database.prototype.configure && sqlite3.Database.prototype.configure('busyTimeout', 5000);
 const db = new sqlite3.Database(dbFile);
 
 // Create table if not exists
@@ -23,6 +24,9 @@ const app = express();
 const PORT = process.env.PORT || 8085;
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
+
+// Health check
+app.get('/health', (req,res)=>res.json({ok:true}));
 
 // Get all keys
 app.get('/api/storage/all', (req, res) => {
@@ -82,11 +86,27 @@ app.post('/api/storage/bulk', (req, res) => {
 });
 
 const distDir = path.join(__dirname, 'public');
-app.use(express.static(distDir));
-app.get('*', (req, res) => {
-  res.sendFile(path.join(distDir, 'index.html'));
-});
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get('*', (req, res) => {
+    const idx = path.join(distDir, 'index.html');
+    if (fs.existsSync(idx)) return res.sendFile(idx);
+    res.status(200).send('OK');
+  });
+} else {
+  console.warn('[warn] public/ not found at', distDir);
+  app.get('*', (req, res) => res.status(200).send('OK'));
+}
 
 app.listen(PORT, () => {
   console.log(`PepTrackr (SQLite) running on http://0.0.0.0:${PORT}`);
+});
+
+
+// Global error handlers to avoid crashes
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] uncaughtException:', err && err.stack || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[fatal] unhandledRejection:', reason);
 });
