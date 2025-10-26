@@ -14,6 +14,7 @@ const dbFile = path.join(dataDir, 'app.db');
 sqlite3.verbose();
 sqlite3.Database.prototype.configure && sqlite3.Database.prototype.configure('busyTimeout', 5000);
 const db = new sqlite3.Database(dbFile);
+
 // --- SSE: real-time broadcast of storage changes ---
 const clients = new Set();
 function broadcast(event, payload) {
@@ -71,7 +72,6 @@ app.get('/api/storage/:key', (req, res) => {
 });
 
 app.post('/api/storage', (req, res) => {
-  const sourceId = req.get('x-pep-instance') || null;
   const { key, value } = req.body || {};
   if (!key) return res.status(400).json({ error: 'key required' });
   const text = (typeof value === 'string') ? value : JSON.stringify(value);
@@ -83,7 +83,6 @@ app.post('/api/storage', (req, res) => {
 });
 
 app.post('/api/storage/bulk', (req, res) => {
-  const sourceId = req.get('x-pep-instance') || null;
   const { data } = req.body || {};
   if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
   const entries = Object.entries(data);
@@ -133,7 +132,7 @@ app.get('*', (req, res) => {
 
 
 
-// Direct doc endpoints with broadcasting (robust)
+// Direct doc endpoints with broadcasting
 app.post('/api/doc/set', (req, res) => {
   res.set('Cache-Control', 'no-store');
   const sourceId = req.get('x-pep-instance') || null;
