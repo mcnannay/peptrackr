@@ -4,8 +4,11 @@ services:
   api:
     build:
       context: ./backend
-    env_file:
-      - .env
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 8080
+      DATABASE_URL: sqlite:///./data.db
+      CORS_ORIGINS: "*"
     volumes:
       - ./backend/data:/app
     ports:
@@ -21,13 +24,15 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_API_BASE=${VITE_API_BASE}
+        # Default to backend container API if not overridden
+        - VITE_API_BASE=http://api:8080
     depends_on:
       - api
     ports:
       - "3000:80"
     restart: unless-stopped
 
+  # Optional Postgres service if you want to switch from SQLite
   # postgres:
   #   image: postgres:16-alpine
   #   environment:
