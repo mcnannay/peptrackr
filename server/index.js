@@ -28,9 +28,7 @@ async function initDb(){
 
 async function getAll(){
   const { rows } = await pool.query('SELECT key, value FROM kv');
-  const out = {};
-  for (const r of rows) out[r.key] = r.value;
-  return out;
+  const out = {}; for (const r of rows) out[r.key] = r.value; return out;
 }
 
 async function setKV(key, value){
@@ -55,15 +53,11 @@ async function bulkSetKV(obj){
     }
     await client.query('COMMIT');
     return entries.length;
-  } catch(e){
-    await client.query('ROLLBACK');
-    throw e;
-  } finally {
-    client.release();
-  }
+  } catch(e){ await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
 }
 
-// --- SSE hub ---
+// SSE hub
 const clients = new Set();
 function broadcastChange(keys){
   const payload = JSON.stringify({ event:'change', keys });
@@ -77,41 +71,30 @@ app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (req, res) => res.json({ok:true}));
 
-// Snapshot (compat with your UI)
+// exact routes your client expects
 app.get('/api/storage/all', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  try {
-    res.json(await getAll());
-  } catch(e){ res.status(500).json({error:e.message}); }
+  res.json(await getAll());
 });
 
-// Single upsert (compat)
 app.post('/api/doc/set', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const sourceId = req.get('x-pep-instance') || null;
   const { key, value } = req.body || {};
   if (!key) return res.status(400).json({error:'key required'});
-  try {
-    await setKV(key, value);
-    res.json({ok:true});
-    broadcastChange([key]); // notify SSE clients
-  } catch(e){ res.status(500).json({error:e.message}); }
+  await setKV(key, value);
+  res.json({ok:true});
+  broadcastChange([key]);
 });
 
-// Bulk upsert (compat)
 app.post('/api/doc/bulkset', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const sourceId = req.get('x-pep-instance') || null;
   const { data } = req.body || {};
   if (!data || typeof data !== 'object') return res.status(400).json({error:'data object required'});
-  try {
-    const count = await bulkSetKV(data);
-    res.json({ok:true, count});
-    broadcastChange(Object.keys(data));
-  } catch(e){ res.status(500).json({error:e.message}); }
+  const n = await bulkSetKV(data);
+  res.json({ok:true, count:n});
+  broadcastChange(Object.keys(data));
 });
 
-// SSE stream (compat)
 app.get('/api/stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-store');
@@ -122,20 +105,15 @@ app.get('/api/stream', (req, res) => {
   req.on('close', () => clients.delete(res));
 });
 
-// Static client
+// serve original client
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
-// Inject bootstrap state (__PEP_BOOT__) into index.html
-app.get('*', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
+// IMPORTANT: do NOT inject or alter original index.html; serve it verbatim
+app.get('*', (req, res) => {
   const indexPath = path.join(publicDir, 'index.html');
   if (!fs.existsSync(indexPath)) return res.status(404).send('client not built');
-  const html = fs.readFileSync(indexPath, 'utf8');
-  let boot = {};
-  try { boot = await getAll(); } catch {}
-  const injected = html.replace('__PEP_BOOT__', () => JSON.stringify(boot));
-  res.send(injected);
+  res.send(fs.readFileSync(indexPath, 'utf8'));
 });
 
 await initDb();

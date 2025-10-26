@@ -1,8 +1,7 @@
-# Build client
+# Build client (ORIGINAL UI preserved)
 FROM node:20-alpine AS client
 WORKDIR /app/client
 COPY client/package.json ./
-# Use npm install (no lockfile needed)
 RUN npm install --no-audit --no-fund
 COPY client ./
 RUN npm run build
@@ -16,7 +15,7 @@ ENV PORT=8080
 COPY server/package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY server ./
-# Bring in prebuilt client to ./public
+# Serve original client build
 COPY --from=client /app/client/dist ./public
 EXPOSE 8080
 CMD ["node", "index.js"]
