@@ -3,8 +3,18 @@ import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler, Legend } from 'chart.js'
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler, Legend)
 
-// storage utils
-const load=(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}}, save=(k,v)=>localStorage.setItem(k,JSON.stringify(v))
+// storage utils — server-only (no browser storage)
+const __CACHE__ = (typeof window !== 'undefined' && window.__PEP_BOOT__) ? { ...window.__PEP_BOOT__ } : {};
+const load = (k, f) => (k in __CACHE__) ? __CACHE__[k] : f;
+const save = async (k, v) => {
+  __CACHE__[k] = v;
+  try { await fetch('/api/doc/set', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key: k, value: v }) }); } catch(_) {}
+};
+const bulkSet = async (data) => {
+  Object.assign(__CACHE__, data);
+  try { await fetch('/api/doc/bulkset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ data }) }); } catch(_) {}
+};
+=>__REMOVED__(k,JSON.stringify(v))
 const LN2=Math.log(2)
 const hexToRgba=(hex,a=1)=>{if(!hex)return `rgba(96,165,250,${a})`;const h=hex.replace('#','');const n=parseInt(h.length===3?h.split('').map(c=>c+c).join(''):h,16);const r=(n>>16)&255,g=(n>>8)&255,b=n&255;return `rgba(${r}, ${g}, ${b}, ${a})`}
 
@@ -24,7 +34,36 @@ function Wordmark(){
 }
 
 export default function App(){
-  const [ready,setReady]=useState(false); const [screen,setScreen]=useState(()=>load('screen','home')); const [theme,setTheme]=useState(()=>load('theme','dark'))
+  const [ready,setReady]=
+  // Real-time sync: listen to server changes and reconcile state
+  React.useEffect(() => {
+    let es;
+    let timer = null;
+    async function reconcile() {
+      const r = await fetch('/api/storage/all', { cache: 'no-store' });
+      if (!r.ok) return;
+      const data = await r.json();
+      if (data.hasOwnProperty('meds')) setMeds(data['meds']);
+      if (data.hasOwnProperty('shots')) setShots(data['shots']);
+      if (data.hasOwnProperty('profile')) setProfile(data['profile']);
+      if (data.hasOwnProperty('theme')) setTheme(data['theme']);
+    }
+    try {
+      es = new EventSource('/api/stream');
+      es.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data || '{}');
+          if (msg && msg.event === 'change') {
+            if (!timer) {
+              timer = setTimeout(() => { timer = null; reconcile().catch(()=>{}); }, 100);
+            }
+          }
+        } catch(_){}
+      };
+    } catch(_){}
+    return () => { try { es && es.close(); } catch(_) {} };
+  }, []);
+useState(false); const [screen,setScreen]=useState(()=>load('screen','home')); const [theme,setTheme]=useState(()=>load('theme','dark'))
   const palette=['#60a5fa','#f59e0b','#10b981','#ef4444','#a78bfa','#22d3ee','#f472b6']
   const [meds,setMeds]=useState(()=>load('meds',DEFAULT_MEDS).map((x,i)=>({ka:x.ka??1.0,color:x.color??palette[i%palette.length],...x})))
   const [shots,setShots]=useState(()=>load('shots',DEFAULT_SHOTS))
@@ -230,7 +269,38 @@ function BottomMenu({setScreen,screen}){
 }
 
 // Settings
-function Settings({theme,setTheme,meds,setMeds,shots,setShots}){
+function Settings({
+  const importJSONFile = e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const data = JSON.parse(reader.result || '{}');
+        const payload = {};
+        if (data.theme !== undefined) payload.theme = data.theme;
+        if (data.meds !== undefined) payload.meds = data.meds;
+        if (data.shots !== undefined) payload.shots = data.shots;
+        if (data.weights !== undefined) payload.weights = data.weights;
+        if (data.profile !== undefined) payload.profile = data.profile;
+        if (data.chart_settings !== undefined) payload.chart_settings = data.chart_settings;
+        if (data.weight_range !== undefined) payload.weight_range = data.weight_range;
+        if (data.home_weight_range !== undefined) payload.home_weight_range = data.home_weight_range;
+        await bulkSet(payload);
+        if (payload.hasOwnProperty('weights')) setWeights(payload.weights);
+        if (payload.hasOwnProperty('theme')) setTheme(payload.theme);
+        if (payload.hasOwnProperty('meds')) setMeds(payload.meds);
+        if (payload.hasOwnProperty('shots')) setShots(payload.shots);
+        if (payload.hasOwnProperty('profile')) setProfile(payload.profile);
+        alert('Import complete.');
+      } catch (err) {
+        alert('Failed to import JSON: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value='';
+  };
+theme,setTheme,meds,setMeds,shots,setShots}){
   const [form,setForm]=useState({name:'',halfLifeHours:'24',everyDays:'7',color:'#60a5fa',ka:'1.0'})
   const importRef=useRef(), [resetConfirm,setResetConfirm]=useState('')
   const addMed=e=>{e.preventDefault(); const name=form.name.trim(), hl=parseFloat(form.halfLifeHours), ev=parseInt(form.everyDays); const color=form.color||'#60a5fa', ka=parseFloat(form.ka)||1.0; if(!name||!Number.isFinite(hl)||!Number.isFinite(ev)) return; const med={id:crypto.randomUUID(),name,halfLifeHours:hl,everyDays:ev,color,ka}; setMeds(p=>[...p,med]); setForm({name:'',halfLifeHours:'24',everyDays:'7',color:'#60a5fa',ka:'1.0'})}
@@ -238,8 +308,8 @@ function Settings({theme,setTheme,meds,setMeds,shots,setShots}){
   const updateField=(id,patch)=>setMeds(p=>p.map(m=>m.id===id?{...m,...patch}:m))
   const addPreset=med=>{const exists=load('meds',[]).some(x=>x.name.toLowerCase()===med.name.toLowerCase()); if(exists){alert(med.name+' already exists.'); return} const next=[...load('meds',[]), med]; save('meds',next); setMeds(next)}
   const exportJSON=()=>{const payload={theme:load('theme','dark'),meds:load('meds',[]),shots:load('shots',[]),weights:load('weights',[]),profile:load('profile',{}),chart_settings:load('chart_settings',{}),screen:load('screen','home'),home_weight_range:load('home_weight_range','month')}; const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='backup.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url) }
-  const importJSONFile=e=>{const file=e.target.files?.[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{try{const data=JSON.parse(reader.result); if(data.meds) save('meds',data.meds.map(m=>({ka:1.0,...m}))); if(data.shots) save('shots',data.shots); if(data.weights) save('weights',data.weights); if(data.profile) save('profile',data.profile); if(data.theme) save('theme',data.theme); if(data.chart_settings) save('chart_settings',data.chart_settings); if(data.home_weight_range) save('home_weight_range',data.home_weight_range); if(data.screen) save('screen',data.screen); setMeds(load('meds',[])); setShots(load('shots',[])); alert('Import complete.')}catch(err){alert('Invalid JSON: '+err.message)}}; reader.readAsText(file); e.target.value=''}
-  const factoryReset=()=>{ if((resetConfirm||'').trim().toLowerCase()!=='yes'){alert('Type \"yes\" to confirm reset.'); return} const keys=['theme','meds','shots','weights','profile','chart_settings','home_weight_range','screen','shot_draft']; keys.forEach(k=>localStorage.removeItem(k)); alert('All app data cleared. Reloading…'); window.location.reload()}
+  const importJSONFile_orig=e=>{const file=e.target.files?.[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{try{const data=JSON.parse(reader.result); if(data.meds) save('meds',data.meds.map(m=>({ka:1.0,...m}))); if(data.shots) save('shots',data.shots); if(data.weights) save('weights',data.weights); if(data.profile) save('profile',data.profile); if(data.theme) save('theme',data.theme); if(data.chart_settings) save('chart_settings',data.chart_settings); if(data.home_weight_range) save('home_weight_range',data.home_weight_range); if(data.screen) save('screen',data.screen); setMeds(load('meds',[])); setShots(load('shots',[])); alert('Import complete.')}catch(err){alert('Invalid JSON: '+err.message)}}; reader.readAsText(file); e.target.value=''}
+  const factoryReset=()=>{ if((resetConfirm||'').trim().toLowerCase()!=='yes'){alert('Type \"yes\" to confirm reset.'); return} const keys=['theme','meds','shots','weights','profile','chart_settings','home_weight_range','screen','shot_draft']; keys.forEach(k=>__REMOVED__(k)); alert('All app data cleared. Reloading…'); window.location.reload()}
   return(<div className="card">
     <h2 style={{marginTop:4}}>Settings</h2>
     <div className="label">Theme</div><div className="row"><button className="save" onClick={()=>setTheme('light')}>Light</button><button className="save" onClick={()=>setTheme('dark')}>Dark</button></div>
