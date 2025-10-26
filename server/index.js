@@ -20,7 +20,7 @@ db.serialize(() => {
 });
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8085;
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 
@@ -61,6 +61,26 @@ app.post('/api/storage', (req, res) => {
 });
 
 // Serve built client
+
+// Bulk upsert: { data: { key: value, ... } }
+app.post('/api/storage/bulk', (req, res) => {
+  const { data } = req.body || {};
+  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
+  const entries = Object.entries(data);
+  if (!entries.length) return res.json({ ok: true, count: 0 });
+  const stmt = db.prepare('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+  db.serialize(() => {
+    for (const [k, v] of entries) {
+      const text = (typeof v === 'string') ? v : JSON.stringify(v);
+      stmt.run(k, text);
+    }
+  });
+  stmt.finalize(err => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ ok: true, count: entries.length });
+  });
+});
+
 const distDir = path.join(__dirname, 'public');
 app.use(express.static(distDir));
 app.get('*', (req, res) => {

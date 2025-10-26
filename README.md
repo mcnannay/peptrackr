@@ -8,8 +8,8 @@ Storage is persisted in a Docker **named volume** at `/data/app.db` (SQLite file
 ## Run locally with Docker
 ```bash
 sudo docker build --no-cache -t peptrackr-sqlite .
-sudo docker run -d --name peptrackr -p 8080:8080 -v peptrackr_data:/data peptrackr-sqlite
-# open http://localhost:8080
+sudo docker run -d --name peptrackr -p 8085:8085 -v peptrackr_data:/data peptrackr-sqlite
+# open http://localhost:8085
 sudo docker logs -f peptrackr
 ```
 
@@ -20,7 +20,7 @@ services:
   peptrackr:
     build: .
     container_name: peptrackr
-    ports: ["8080:8080"]
+    ports: ["8085:8085"]
     environment: ["DATA_DIR=/data"]
     volumes: ["peptrackr_data:/data"]
     restart: unless-stopped

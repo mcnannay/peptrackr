@@ -28,7 +28,7 @@ COPY --from=builder /app/client/dist/ ./server/public/
 # Persistent data
 VOLUME ["/data"]
 ENV DATA_DIR=/data
-ENV PORT=8080
+ENV PORT=8085
 
-EXPOSE 8080
+EXPOSE 8085
 CMD ["node", "server/index.js"]
