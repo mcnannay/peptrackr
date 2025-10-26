@@ -41,6 +41,22 @@ api.get('/storage/:key', async (req, res) => {
 api.post('/storage', async (req, res) => {
   const { key, value } = req.body || {};
   if (!key) return res.status(400).json({ error: 'key required' });
+
+// Bulk upsert: { entries: { key: value, ... } }
+api.post('/storage/bulk', async (req, res) => {
+  const { entries } = req.body || {};
+  if (!entries || typeof entries !== 'object') {
+    return res.status(400).json({ error: 'entries object required' });
+  }
+  await db.read();
+  db.data.storage ||= {};
+  for (const [k, v] of Object.entries(entries)) {
+    db.data.storage[k] = v;
+  }
+  await db.write();
+  res.json({ ok: true, count: Object.keys(entries).length });
+});
+
   await db.read();
   db.data.storage ||= {};
   db.data.storage[key] = value;

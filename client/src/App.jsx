@@ -598,3 +598,33 @@ export { }
 })();
 /* --- End write-through shim --- */
 
+
+
+// --- Bulk sync of entire localStorage (reverse-proxy safe) ---
+(function () {
+  const SNAP_MS = 5000; // 5 seconds
+  const buildSnapshot = () => {
+    const entries = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      const raw = localStorage.getItem(k);
+      try { entries[k] = JSON.parse(raw); } catch (_) { entries[k] = raw; }
+    }
+    return entries;
+  };
+  const push = () => {
+    try {
+      fetch('/peptrackr-api/storage/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: buildSnapshot() })
+      }).catch(() => {});
+    } catch (e) {}
+  };
+  // Push immediately on load (covers "import backup" use case), then periodically
+  try { push(); } catch (e) {}
+  setInterval(push, SNAP_MS);
+  // Also push when tab becomes hidden (user navigates away)
+  try { document.addEventListener('visibilitychange', () => { if (document.hidden) push(); }); } catch (e) {}
+})();
+// --- End bulk sync ---
