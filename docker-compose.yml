@@ -4,10 +4,12 @@ services:
   api:
     build:
       context: ./backend
-    ports:
-      - "8083:8080"
+    env_file:
+      - .env
     volumes:
-      - ./backend/data:/app/data
+      - ./backend/data:/app
+    ports:
+      - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
@@ -19,9 +21,27 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE: "http://api:8080"
+        - VITE_API_BASE=${VITE_API_BASE}
     depends_on:
       - api
     ports:
-      - "8085:80"
+      - "3000:80"
     restart: unless-stopped
+
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_DB: appdb
+  #     POSTGRES_USER: app
+  #     POSTGRES_PASSWORD: app
+  #   volumes:
+  #     - dbdata:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 5
+
+volumes:
+  dbdata:
