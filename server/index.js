@@ -20,7 +20,7 @@ async function initDb(){
   await pool.query(`
     CREATE TABLE IF NOT EXISTS kv (
       key TEXT PRIMARY KEY,
-      value JSONB NOT NULL,
+      value JSONB,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -44,6 +44,8 @@ async function bulkSetKV(obj){
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Empty object means "clear all"
+    if (entries.length === 0) await client.query('DELETE FROM kv');
     for (const [k, v] of entries){
       await client.query(
         `INSERT INTO kv(key, value, updated_at) VALUES ($1, $2, NOW())
@@ -71,14 +73,14 @@ app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (req, res) => res.json({ok:true}));
 
-// exact routes your client expects
+// Legacy endpoints for override
 app.get('/api/storage/all', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
+  res.set('Cache-Control', 'no-store');
   res.json(await getAll());
 });
 
-app.post('/api/doc/set', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
+app.post('/api/storage', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const { key, value } = req.body || {};
   if (!key) return res.status(400).json({error:'key required'});
   await setKV(key, value);
@@ -86,26 +88,8 @@ app.post('/api/doc/set', async (req, res) => {
   broadcastChange([key]);
 });
 
-
-
-// Aliases for legacy client (storage-override.js)
-app.post('/api/storage', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  const { key, value } = req.body || {};
-  if (!key) return res.status(400).json({error:'key required'});
-  try { await setKV(key, value); res.json({ok:true}); broadcastChange([key]); }
-  catch(e){ res.status(500).json({error:e.message}); }
-});
-
 app.post('/api/storage/bulk', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  const { data } = req.body || {};
-  if (!data || typeof data !== 'object') return res.status(400).json({error:'data object required'});
-  try { const n = await bulkSetKV(data); res.json({ok:true, count:n}); broadcastChange(Object.keys(data)); }
-  catch(e){ res.status(500).json({error:e.message}); }
-});
-app.post('/api/doc/bulkset', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
+  res.set('Cache-Control', 'no-store');
   const { data } = req.body || {};
   if (!data || typeof data !== 'object') return res.status(400).json({error:'data object required'});
   const n = await bulkSetKV(data);
@@ -123,18 +107,19 @@ app.get('/api/stream', (req, res) => {
   req.on('close', () => clients.delete(res));
 });
 
-// serve original client
+// Static client
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
-// IMPORTANT: do NOT inject or alter original index.html; serve it verbatim
-app.get('*', (req, res) => {
+// Inject __PEP_BOOT__ before </head> so override can seed synchronously
+app.get('*', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const indexPath = path.join(publicDir, 'index.html');
   if (!fs.existsSync(indexPath)) return res.status(404).send('client not built');
   const html = fs.readFileSync(indexPath, 'utf8');
   let boot = {};
   try { boot = await getAll(); } catch {}
-  const injected = html.replace('</head>', `<script>window.__PEP_BOOT__=${JSON.stringify(boot)}</script></head>`);
+  const injected = html.replace('</head>', `<script>window.__PEP_BOOT__=${JSON.stringify(boot)}</script><script src="/storage-override.js"></script></head>`);
   res.send(injected);
 });
 
