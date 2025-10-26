@@ -22,12 +22,15 @@ const PORT = process.env.PORT || 8080;
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 
-app.get('/api/storage/all', async (req, res) => {
+// Mount API under a fixed absolute prefix so reverse-proxy path doesn't matter
+const api = express.Router();
+
+api.get('/storage/all', async (req, res) => {
   await db.read();
   res.json(db.data.storage || {});
 });
 
-app.get('/api/storage/:key', async (req, res) => {
+api.get('/storage/:key', async (req, res) => {
   const { key } = req.params;
   await db.read();
   const v = db.data.storage?.[key];
@@ -35,7 +38,7 @@ app.get('/api/storage/:key', async (req, res) => {
   res.json({ key, value: v });
 });
 
-app.post('/api/storage', async (req, res) => {
+api.post('/storage', async (req, res) => {
   const { key, value } = req.body || {};
   if (!key) return res.status(400).json({ error: 'key required' });
   await db.read();
@@ -45,13 +48,17 @@ app.post('/api/storage', async (req, res) => {
   res.json({ ok: true });
 });
 
+app.use('/peptrackr-api', api);
+
+// Serve built client
 const distDir = path.join(__dirname, 'public');
 app.use(express.static(distDir));
 
+// SPA fallback
 app.get('*', (req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(`PepTrackr server running on http://0.0.0.0:${PORT}`);
+  console.log(`PepTrackr server running on http://0.0.0.0:${PORT} (API at /peptrackr-api/)`);
 });

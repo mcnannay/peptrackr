@@ -1,11 +1,11 @@
 
 
-/* --- Reverse-proxy safe API helper + bootstrap hydrate --- */
-const apiUrl = (p) => new URL(p, window.location.href).toString();
+/* --- Fixed-API prefix (reverse-proxy agnostic) + bootstrap hydrate --- */
+const API_BASE = '/peptrackr-api/';
 
 (function () {
   try {
-    fetch(apiUrl('api/storage/all'))
+    fetch(API_BASE + 'storage/all')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data && typeof data === 'object') {
@@ -567,13 +567,13 @@ function Vial({totalMl, drawMl}){
 export { }
 
 
-/* --- Server write-through for ALL localStorage writes (reverse-proxy safe) --- */
+/* --- Server write-through for ALL localStorage writes (fixed API prefix) --- */
 (function () {
   const post = (k, v) => {
     let payload = v;
     try { payload = JSON.parse(v); } catch (_) { payload = v; }
     try {
-      fetch(apiUrl('api/storage'), {
+      fetch(API_BASE + 'storage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: k, value: payload })
