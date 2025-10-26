@@ -14,6 +14,24 @@ const dbFile = path.join(dataDir, 'app.db');
 sqlite3.verbose();
 sqlite3.Database.prototype.configure && sqlite3.Database.prototype.configure('busyTimeout', 5000);
 const db = new sqlite3.Database(dbFile);
+// --- SSE: real-time broadcast of storage changes ---
+const clients = new Set();
+function broadcast(event, payload) {
+  const data = JSON.stringify({ event, ...payload });
+  for (const res of clients) {
+    try { res.write(`data: ${data}\n\n`); } catch (_) {}
+  }
+}
+app.get('/api/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders && res.flushHeaders();
+  res.write(': connected\n\n');
+  clients.add(res);
+  req.on('close', () => clients.delete(res));
+});
+
 
 db.serialize(() => {
   db.run('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)');
@@ -53,6 +71,7 @@ app.get('/api/storage/:key', (req, res) => {
 });
 
 app.post('/api/storage', (req, res) => {
+  const sourceId = req.get('x-pep-instance') || null;
   const { key, value } = req.body || {};
   if (!key) return res.status(400).json({ error: 'key required' });
   const text = (typeof value === 'string') ? value : JSON.stringify(value);
@@ -64,6 +83,7 @@ app.post('/api/storage', (req, res) => {
 });
 
 app.post('/api/storage/bulk', (req, res) => {
+  const sourceId = req.get('x-pep-instance') || null;
   const { data } = req.body || {};
   if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
   const entries = Object.entries(data);
@@ -107,6 +127,43 @@ app.get('*', (req, res) => {
       }
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(injectBootstrap(html, obj));
+    });
+  });
+});
+
+
+
+// Direct doc endpoints with broadcasting (robust)
+app.post('/api/doc/set', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const sourceId = req.get('x-pep-instance') || null;
+  const { key, value } = req.body || {};
+  if (!key) return res.status(400).json({ error: 'key required' });
+  const text = (typeof value === 'string') ? value : JSON.stringify(value);
+  db.run('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', [key, text], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    try { broadcast('change', { source: sourceId, keys: [key] }); } catch(_) {}
+    res.json({ ok: true });
+  });
+});
+
+app.post('/api/doc/bulkset', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const sourceId = req.get('x-pep-instance') || null;
+  const { data } = req.body || {};
+  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
+  const entries = Object.entries(data);
+  if (!entries.length) return res.json({ ok: true, count: 0 });
+  const stmt = db.prepare('INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+  db.serialize(() => {
+    for (const [k, v] of entries) {
+      const text = (typeof v === 'string') ? v : JSON.stringify(v);
+      stmt.run([k, text]);
+    }
+    stmt.finalize((err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      try { broadcast('change', { source: sourceId, keys: Object.keys(data) }); } catch(_) {}
+      res.json({ ok: true, count: entries.length });
     });
   });
 });

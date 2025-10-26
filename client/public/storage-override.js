@@ -13,7 +13,40 @@
     }
   }
 
-  // 2) Facade for localStorage (memory only; no real localStorage writes)
+  
+  // Unique instance id for this tab/session
+  const INSTANCE = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2);
+  try { window.__PEP_INSTANCE__ = INSTANCE; } catch(_) {}
+
+  // Helper to add instance header
+  const withInstance = (init={}) => {
+    const headers = Object.assign({}, init.headers || {}, {'x-pep-instance': INSTANCE, 'Content-Type':'application/json'});
+    return Object.assign({}, init, { headers });
+  };
+
+  // Replace fetch calls to include x-pep-instance
+  const post = (url, body) => fetch(url, withInstance({ method:'POST', body: JSON.stringify(body) }));
+
+  // Wire SSE for real-time updates; if event comes from other instance, hard-reload
+  try {
+    const es = new EventSource('/api/stream');
+    let reloadTimer = null;
+    es.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data || '{}');
+        if (msg && msg.event === 'change' && msg.source !== INSTANCE) {
+          // Update our memory (best effort) then force reload to guarantee consistency.
+          if (Array.isArray(msg.keys)) {
+            // Optional: could fetch only the changed keys; simplest is full reload
+          }
+          if (!reloadTimer) {
+            reloadTimer = setTimeout(() => { location.reload(); }, 300);
+          }
+        }
+      } catch(_) {}
+    };
+  } catch(_) {}
+// 2) Facade for localStorage (memory only; no real localStorage writes)
   const api = {
     get length(){ return mem.size; },
     key(i){ return Array.from(mem.keys())[i] ?? null; },
@@ -24,7 +57,7 @@
       // Push to DB
       let payload = v;
       try { payload = JSON.parse(v); } catch(_) { payload = v; }
-      fetch('/api/storage', {
+      post('/api/doc/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: k, value: payload })
@@ -37,7 +70,7 @@
       for (const [kk, vv] of mem.entries()) {
         data[kk] = fromJSON(vv);
       }
-      fetch('/api/storage/bulk', {
+      post('/api/doc/bulkset', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data })
       }).catch(()=>{});
@@ -45,7 +78,7 @@
     clear(){
       mem.clear();
       // Reflect clear with empty snapshot
-      fetch('/api/storage/bulk', {
+      post('/api/doc/bulkset', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: {} })
       }).catch(()=>{});
@@ -83,7 +116,7 @@
         setTimeout(() => {
           const data = {};
           for (const [kk, vv] of mem.entries()) data[kk] = fromJSON(vv);
-          fetch('/api/storage/bulk', {
+          post('/api/doc/bulkset', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data })
           }).catch(()=>{});
