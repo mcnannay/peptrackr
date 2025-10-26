@@ -86,6 +86,24 @@ app.post('/api/doc/set', async (req, res) => {
   broadcastChange([key]);
 });
 
+
+
+// Aliases for legacy client (storage-override.js)
+app.post('/api/storage', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { key, value } = req.body || {};
+  if (!key) return res.status(400).json({error:'key required'});
+  try { await setKV(key, value); res.json({ok:true}); broadcastChange([key]); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/storage/bulk', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { data } = req.body || {};
+  if (!data || typeof data !== 'object') return res.status(400).json({error:'data object required'});
+  try { const n = await bulkSetKV(data); res.json({ok:true, count:n}); broadcastChange(Object.keys(data)); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
 app.post('/api/doc/bulkset', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const { data } = req.body || {};
@@ -113,7 +131,11 @@ app.use(express.static(publicDir));
 app.get('*', (req, res) => {
   const indexPath = path.join(publicDir, 'index.html');
   if (!fs.existsSync(indexPath)) return res.status(404).send('client not built');
-  res.send(fs.readFileSync(indexPath, 'utf8'));
+  const html = fs.readFileSync(indexPath, 'utf8');
+  let boot = {};
+  try { boot = await getAll(); } catch {}
+  const injected = html.replace('</head>', `<script>window.__PEP_BOOT__=${JSON.stringify(boot)}</script></head>`);
+  res.send(injected);
 });
 
 await initDb();
