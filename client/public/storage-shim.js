@@ -89,3 +89,35 @@
   });
   window.addEventListener('beforeunload', () => { try { navigator.sendBeacon && navigator.sendBeacon('/api/storage/bulk', new Blob([JSON.stringify({ data: (()=>{const o={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);const raw=localStorage.getItem(k);let v=raw;try{v=JSON.parse(raw)}catch(_){v=raw}o[k]=v;}return o;})()})], {type:'application/json'})); } catch(_){} });
 })();
+
+
+// Hook FileReader to detect JSON backup imports and force a bulk push after onload
+(function() {
+  const _FR = window.FileReader;
+  if (!_FR) return;
+  const _readAsText = _FR.prototype.readAsText;
+  _FR.prototype.readAsText = function() {
+    // After load completes, schedule a bulk push (gives app a moment to write keys)
+    this.addEventListener('load', () => {
+      try {
+        setTimeout(() => {
+          // Build full snapshot and push
+          const data = {};
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            const raw = localStorage.getItem(k);
+            let v = raw;
+            try { v = JSON.parse(raw); } catch(_) { v = raw; }
+            data[k] = v;
+          }
+          fetch('/api/storage/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data })
+          }).catch(()=>{});
+        }, 800); // slight delay to let app finish saving
+      } catch(_) {}
+    }, { once: true });
+    return _readAsText.apply(this, arguments);
+  };
+})();
