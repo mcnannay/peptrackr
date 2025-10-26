@@ -4,10 +4,10 @@ services:
   api:
     build:
       context: ./backend
-    env_file:
-      - .env
     ports:
-      - "8080:8080"
+      - "8080:8080"                         # FastAPI exposed on host:8080
+    volumes:
+      - ./backend/data:/app/data            # persist DB (SQLite file lives here)
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
@@ -19,14 +19,14 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_API_BASE=${VITE_API_BASE}
+        VITE_API_BASE: "http://api:8080"    # baked in at build time (no .env)
     depends_on:
       - api
     ports:
-      - "3000:80"
+      - "8085:80"                           # UI on host:8085
     restart: unless-stopped
 
-  # Optional Postgres Database (uncomment to use)
+  # Optional Postgres (instead of SQLite)
   # postgres:
   #   image: postgres:16-alpine
   #   environment:
@@ -35,12 +35,12 @@ services:
   #     POSTGRES_PASSWORD: app
   #   volumes:
   #     - dbdata:/var/lib/postgresql/data
-  #   restart: unless-stopped
   #   healthcheck:
   #     test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
   #     interval: 30s
   #     timeout: 5s
   #     retries: 5
+  #   restart: unless-stopped
 
 volumes:
   dbdata:
