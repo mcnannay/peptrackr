@@ -1,19 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { fetchAll, setDoc, bulkSet, connectSSE } from './api.js'
+import React, { useEffect, useState } from 'react'
+import { fetchAll, setDoc, bulkSet, connectSocket } from './api.js'
 
-const defaultProfile = { name: '', age: '', notes: '' }
+const emptyProfile = { name:'', age:'', notes:'' }
 
 export default function App(){
-  // Canonical state mirrors server keys (no local storage)
-  const [theme, setTheme] = useState((window.__PEP_BOOT__ && window.__PEP_BOOT__.theme) || 'light')
-  const [profile, setProfile] = useState((window.__PEP_BOOT__ && window.__PEP_BOOT__.profile) || defaultProfile)
-  const [meds, setMeds] = useState((window.__PEP_BOOT__ && window.__PEP_BOOT__.meds) || [])
-  const [shots, setShots] = useState((window.__PEP_BOOT__ && window.__PEP_BOOT__.shots) || [])
-  const [weights, setWeights] = useState((window.__PEP_BOOT__ && window.__PEP_BOOT__.weights) || [])
+  const [theme, setTheme] = useState('light')
+  const [profile, setProfile] = useState(emptyProfile)
+  const [meds, setMeds] = useState([])
+  const [shots, setShots] = useState([])
+  const [weights, setWeights] = useState([])
 
-  // One source of truth: server. On change events, refetch and replace state.
+  // initial fetch + live sync
   useEffect(() => {
-    let es
+    let socket
     let timer = null
     async function reconcile(){
       const data = await fetchAll()
@@ -23,18 +22,17 @@ export default function App(){
       if (data.shots !== undefined) setShots(data.shots)
       if (data.weights !== undefined) setWeights(data.weights)
     }
-    es = connectSSE(() => {
+    reconcile().catch(()=>{})
+    socket = connectSocket(() => {
       if (!timer) {
-        timer = setTimeout(() => { timer = null; reconcile().catch(()=>{}); }, 100)
+        timer = setTimeout(() => { timer = null; reconcile().catch(()=>{}) }, 80)
       }
     })
-    return () => { try { es && es.close() } catch {} }
+    return () => { try { socket && socket.close() } catch {} }
   }, [])
 
-  // Basic UI: meds and weights management + backup/restore + theme/profile
+  // Edits
   const [newMed, setNewMed] = useState({ name:'', dose:'' })
-  const [newWeight, setNewWeight] = useState({ date:'', value:'' })
-
   async function addMed(){
     const next = [...meds, { id: crypto.randomUUID(), ...newMed }]
     setMeds(next)
@@ -42,41 +40,26 @@ export default function App(){
     setNewMed({ name:'', dose:'' })
   }
 
+  const [newWeight, setNewWeight] = useState({ date:'', value:'' })
   async function addWeight(){
-    const next = [...weights, { date: newWeight.date || new Date().toISOString().slice(0,10), value: Number(newWeight.value||0) }]
+    const next = [...weights, { date: newWeight.date || new Date().toISOString().slice(0,10), value: Number(newWeight.value || 0) }]
     setWeights(next)
     await setDoc('weights', next)
     setNewWeight({ date:'', value:'' })
   }
 
-  async function saveProfile(p){
-    setProfile(p)
-    await setDoc('profile', p)
+  async function saveProfileNow(){
+    await setDoc('profile', profile)
   }
-
   async function switchTheme(t){
     setTheme(t)
     await setDoc('theme', t)
   }
 
-  async function factoryReset(){
-    if (!confirm('This will clear ALL data on the server. Continue?')) return
-    await bulkSet({}) // writes empty dataset
-    // Immediate local feedback:
-    setTheme('light')
-    setProfile({ name:'', age:'', notes:'' })
-    setMeds([])
-    setShots([])
-    setWeights([])
-    // SSE will still arrive shortly and confirm canonical state
-  }
-
-  async function exportBackup(){
-    const blob = new Blob([JSON.stringify(await fetchAll(), null, 2)], { type:'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = 'backup.json'
-    a.click()
+  async function resetAll(){
+    if (!confirm('Clear ALL data on server?')) return
+    await bulkSet({})
+    setTheme('light'); setProfile(emptyProfile); setMeds([]); setShots([]); setWeights([])
   }
 
   function importJSON(e){
@@ -87,35 +70,38 @@ export default function App(){
       try {
         const data = JSON.parse(reader.result || '{}')
         await bulkSet(data)
-        // Update this tab immediately without waiting for SSE
         if (data.theme !== undefined) setTheme(data.theme)
         if (data.profile !== undefined) setProfile(data.profile)
         if (data.meds !== undefined) setMeds(data.meds)
         if (data.shots !== undefined) setShots(data.shots)
         if (data.weights !== undefined) setWeights(data.weights)
-        alert('Import complete.')
-      } catch(e) {
-        alert('Import failed: ' + e.message)
-      }
+        alert('Import done')
+      } catch(e){ alert('Import failed: ' + e.message) }
     }
     reader.readAsText(file)
     e.target.value=''
   }
 
+  async function exportJSON(){
+    const data = await fetchAll()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}))
+    a.download = 'backup.json'; a.click()
+  }
+
   return (
     <div className="card">
-      <h1>PepTrackr</h1>
+      <h1>PepTrackr — Postgres + WebSocket</h1>
       <div className="row">
         <label>Theme</label>
         <button className="btn" onClick={()=>switchTheme('light')}>Light</button>
         <button className="btn" onClick={()=>switchTheme('dark')}>Dark</button>
         <div style={{marginLeft:'auto'}}>
-          <button className="btn" onClick={exportBackup}>Export Backup</button>
-          <label className="btn">
-            Import JSON
-            <input type="file" accept="application/json" onChange={importJSON} style={{display:'none'}} />
+          <button className="btn" onClick={exportJSON}>Export</button>
+          <label className="btn">Import
+            <input type="file" accept="application/json" style={{display:'none'}} onChange={importJSON} />
           </label>
-          <button className="btn" onClick={factoryReset}>Factory Reset</button>
+          <button className="btn" onClick={resetAll}>Factory Reset</button>
         </div>
       </div>
 
@@ -123,18 +109,18 @@ export default function App(){
 
       <h2>Profile</h2>
       <div className="row">
-        <input placeholder="name" value={profile.name} onChange={e=>setProfile({...profile,name:e.target.value})}/>
-        <input placeholder="age"  value={profile.age} onChange={e=>setProfile({...profile,age:e.target.value})}/>
-        <input placeholder="notes" style={{flex:1}} value={profile.notes} onChange={e=>setProfile({...profile,notes:e.target.value})}/>
-        <button className="btn primary" onClick={()=>saveProfile(profile)}>Save</button>
+        <input placeholder="name" value={profile.name} onChange={e=>setProfile({...profile, name:e.target.value})}/>
+        <input placeholder="age" value={profile.age} onChange={e=>setProfile({...profile, age:e.target.value})}/>
+        <input placeholder="notes" style={{flex:1}} value={profile.notes} onChange={e=>setProfile({...profile, notes:e.target.value})}/>
+        <button className="btn primary" onClick={saveProfileNow}>Save</button>
       </div>
 
       <hr/>
 
       <h2>Meds</h2>
       <div className="row">
-        <input placeholder="name" value={newMed.name} onChange={e=>setNewMed({...newMed,name:e.target.value})}/>
-        <input placeholder="dose" value={newMed.dose} onChange={e=>setNewMed({...newMed,dose:e.target.value})}/>
+        <input placeholder="name" value={newMed.name} onChange={e=>setNewMed({...newMed, name:e.target.value})}/>
+        <input placeholder="dose" value={newMed.dose} onChange={e=>setNewMed({...newMed, dose:e.target.value})}/>
         <button className="btn primary" onClick={addMed}>Add</button>
       </div>
       <table><thead><tr><th>Name</th><th>Dose</th></tr></thead><tbody>

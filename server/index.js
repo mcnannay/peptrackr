@@ -1,121 +1,160 @@
 import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
 import path from 'path';
 import fs from 'fs';
-import cors from 'cors';
 import { fileURLToPath } from 'url';
-import { db, init, allKV, setKV, bulkSet, clearAll } from './db.js';
+import { Pool } from 'pg';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
-const DATA_DIR = process.env.DATA_DIR || './data';
 
-const app = express();
-app.use(cors());
-app.use(express.json({limit:'5mb'}));
+// --- DB ---
+const pool = new Pool({
+  host: process.env.PGHOST,
+  user: process.env.PGUSER,
+  password: process.env.PGPASSWORD,
+  database: process.env.PGDATABASE,
+});
 
-// SSE clients
-const clients = new Set();
-function broadcast(event, payload) {
-  const data = JSON.stringify({ event, ...payload });
-  for (const res of clients) {
-    try { res.write(`data: ${data}\n\n`); } catch {}
+async function initDb(){
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kv (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+async function getAll(){
+  const { rows } = await pool.query('SELECT key, value FROM kv');
+  const out = {};
+  for (const r of rows){ out[r.key] = r.value; }
+  return out;
+}
+async function setKV(key, value){
+  await pool.query(
+    `INSERT INTO kv(key, value, updated_at) VALUES ($1, $2, NOW())
+     ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
+    [key, value]
+  );
+}
+async function bulkSetKV(obj){
+  const entries = Object.entries(obj || {});
+  if (!entries.length) return 0;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const [k, v] of entries){
+      await client.query(
+        `INSERT INTO kv(key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
+        [k, v]
+      );
+    }
+    await client.query('COMMIT');
+    return entries.length;
+  } catch(e){
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
   }
 }
 
-app.get('/health', (req, res) => res.json({ok:true}));
+// --- App/Socket ---
+const app = express();
+app.use(express.json({limit:'10mb'}));
 
-app.get('/api/stream', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders && res.flushHeaders();
-  res.write(': connected\n\n');
-  clients.add(res);
-  req.on('close', () => clients.delete(res));
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: true, credentials: true }
 });
 
-// Storage API
-app.get('/api/storage/all', async (req, res) => {
+io.on('connection', (socket) => {
+  // On connect, you could send a small hello; clients will fetch snapshot anyway.
+});
+
+function broadcastChange(keys){
+  io.emit('kv:change', { keys });
+}
+
+// --- API ---
+app.get('/health', (req, res) => res.json({ok:true}));
+
+app.get('/api/kv', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
-    const data = await allKV();
-    res.json(data);
-  } catch (e) {
-    res.status(500).json({error: e.message});
+    res.json(await getAll());
+  } catch(e){
+    res.status(500).json({error:e.message});
   }
 });
 
-app.post('/api/doc/set', async (req, res) => {
+app.put('/api/kv/:key', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const sourceId = req.get('x-pep-instance') || null;
-  const { key, value } = req.body || {};
-  if (!key) return res.status(400).json({error:'key required'});
+  const { key } = req.params;
+  const { value } = req.body || {};
+  if (value === undefined) return res.status(400).json({error:'value required'});
   try {
     await setKV(key, value);
     res.json({ok:true});
-    broadcast('change', { source: sourceId, keys:[key] });
-  } catch(e) {
+    broadcastChange([key]);
+  } catch(e){
     res.status(500).json({error:e.message});
   }
 });
 
-app.post('/api/doc/bulkset', async (req, res) => {
+app.post('/api/kv/bulk', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const sourceId = req.get('x-pep-instance') || null;
-  const { data } = req.body || {};
-  if (!data || typeof data !== 'object') return res.status(400).json({error:'data object required'});
+  const data = req.body || {};
+  if (!data || typeof data !== 'object') return res.status(400).json({error:'object body required'});
   try {
-    const n = await bulkSet(data);
+    const n = await bulkSetKV(data);
     res.json({ok:true, count:n});
-    broadcast('change', { source: sourceId, keys:Object.keys(data) });
-  } catch(e) {
+    broadcastChange(Object.keys(data));
+  } catch(e){
     res.status(500).json({error:e.message});
   }
 });
 
-// Backup export/import
 app.get('/api/backup', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
-    const data = await allKV();
+    const data = await getAll();
     res.setHeader('Content-Disposition','attachment; filename="backup.json"');
     res.json(data);
-  } catch(e) {
+  } catch(e){
     res.status(500).json({error:e.message});
   }
 });
 
 app.post('/api/backup', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const sourceId = req.get('x-pep-instance') || null;
   const data = req.body || {};
   if (!data || typeof data !== 'object') return res.status(400).json({error:'object body required'});
   try {
-    await bulkSet(data);
-    res.json({ok:true, count:Object.keys(data).length});
-    broadcast('change', { source: sourceId, keys:Object.keys(data) });
-  } catch(e) {
+    const n = await bulkSetKV(data);
+    res.json({ok:true, count:n});
+    broadcastChange(Object.keys(data));
+  } catch(e){
     res.status(500).json({error:e.message});
   }
 });
 
 // Static client
-const clientDir = path.resolve(__dirname, '../client_dist');
-app.use(express.static(clientDir));
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
 
 app.get('*', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const indexPath = path.join(clientDir, 'index.html');
-  if (!fs.existsSync(indexPath)) return res.status(404).send('missing client');
-  // Inject initial state
+  const indexPath = path.join(publicDir, 'index.html');
+  if (!fs.existsSync(indexPath)) return res.status(404).send('client not built');
   const html = fs.readFileSync(indexPath, 'utf8');
-  let boot = {};
-  try { boot = await allKV(); } catch {}
-  const injected = html.replace('__PEP_BOOT__', () => JSON.stringify(boot));
-  res.send(injected);
+  res.send(html);
 });
 
-init();
-app.listen(PORT, () => console.log('Server listening on', PORT));
+await initDb();
+server.listen(PORT, () => console.log('listening on', PORT));

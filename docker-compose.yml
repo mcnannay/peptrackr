@@ -1,20 +1,33 @@
 version: "3.9"
 services:
-  peptrackr:
-    build: .
-    container_name: peptrackr_server
+  db:
+    image: postgres:16-alpine
     environment:
-      - NODE_ENV=production
-      - PORT=8080
-      - DATA_DIR=/data
+      POSTGRES_PASSWORD: peptrackr
+      POSTGRES_USER: peptrackr
+      POSTGRES_DB: peptrackr
     volumes:
-      - peptrackr_data:/data
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U peptrackr -d peptrackr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      PGHOST: db
+      PGUSER: peptrackr
+      PGPASSWORD: peptrackr
+      PGDATABASE: peptrackr
     ports:
       - "8085:8080"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+
 volumes:
-  peptrackr_data:
+  db_data:
