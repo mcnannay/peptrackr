@@ -29,6 +29,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 
 // API
 app.get('/api/storage/all', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   db.all('SELECT key, value FROM kv', [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     const obj = {};
@@ -92,6 +93,7 @@ function injectBootstrap(html, obj) {
 }
 
 app.get('*', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const indexPath = path.join(distDir, 'index.html');
   fs.readFile(indexPath, 'utf8', (err, html) => {
     if (err) return res.status(200).send('OK');
