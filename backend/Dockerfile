@@ -3,7 +3,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+RUN npm install --no-audit --no-fund
 
 COPY prisma ./prisma
 RUN npx prisma generate
@@ -14,4 +14,4 @@ ENV NODE_ENV=production
 ENV PORT=8086
 
 # Run migrations at startup via entrypoint
-CMD npx prisma migrate deploy && node src/server.js
+CMD (npx prisma migrate deploy || npx prisma db push) && node src/server.js
