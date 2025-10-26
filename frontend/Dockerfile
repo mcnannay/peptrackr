@@ -5,10 +5,10 @@ WORKDIR /app
 ARG VITE_API_BASE=http://localhost:8080
 ENV VITE_API_BASE=${VITE_API_BASE}
 
-# Copy package files; do not rely on optional shells or redirections
-COPY package.json ./
-# Copy lockfile if present (won't fail if absent)
-COPY package-lock.json ./
+# Copy manifest files (works even if no lockfile is present)
+COPY package*.json ./
+
+# Install deps (npm ci if lockfile exists, otherwise npm i)
 RUN if [ -f package-lock.json ]; then npm ci; else npm i; fi
 
 # Copy the rest and build
