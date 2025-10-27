@@ -1,45 +1,8 @@
-version: "3.9"
 services:
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: peptrackr-web:1.0.0
+  peptrackr:
+    build: .
     ports:
-      - "8080:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    image: peptrackr-backend:1.0.0
-    environment:
-      PGHOST: db
-      PGPORT: 5432
-      PGUSER: peptrackr
-      PGPASSWORD: peptrackr
-      PGDATABASE: peptrackr
-    depends_on:
-      - db
-    restart: unless-stopped
-
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: peptrackr
-      POSTGRES_PASSWORD: peptrackr
-      POSTGRES_DB: peptrackr
+      - "8085:8085"
     volumes:
-      - dbdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U peptrackr -d peptrackr"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-volumes:
-  dbdata:
+      - ./data:/data
+    restart: always

@@ -1,0 +1,30 @@
+:root{
+  --bg:#0b1216; --card:#111a20; --muted:#0e171d;
+  --fg:#e8f9ff; --dim:#a6c7d8;
+  --ok:#00d084; --warn:#ffb400; --bad:#ff4d4d; --under:#7aa7ff; --gray:#44606f; --cyan:#00c2ff;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Arial,sans-serif}
+.container{max-width:860px;margin:0 auto;padding:16px}
+.header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.2px}
+.nav{display:flex;gap:6px;margin:8px 0 12px}
+.nav button{background:var(--muted);color:var(--fg);border:none;padding:8px 12px;border-radius:10px;cursor:pointer}
+.nav button.active{outline:2px solid var(--cyan)}
+.card{background:var(--card);border:1px solid #17323f;padding:12px;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.25);margin-bottom:12px}
+.row{display:flex;gap:10px}
+.col{display:flex;flex-direction:column;gap:10px}
+.tiny{opacity:.8;font-size:12px}
+.list{display:flex;flex-direction:column;gap:6px}
+.list-item{padding:8px;border-radius:10px;background:var(--muted);border:1px solid #17323f}
+.save{background:var(--cyan);color:#06202a;border:none;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:700}
+.danger{background:var(--bad);color:white;border:none;padding:8px 12px;border-radius:10px;cursor:pointer}
+.input, input, select{background:var(--muted);color:var(--fg);border:1px solid #17323f;border-radius:10px;padding:8px}
+.sync-dot{ width:10px; height:10px; margin-left:6px; border-radius:50%; background: var(--gray); transition: background .3s, box-shadow .3s; display:inline-block; }
+.sync-dot.syncing{ background: var(--ok); box-shadow: 0 0 6px var(--ok); animation: pulse 1s infinite; }
+.sync-dot.ok{ background: var(--ok) }
+.sync-dot.error{ background: var(--bad); box-shadow:0 0 6px var(--bad) }
+@keyframes pulse{0%,100%{opacity:.6;transform:scale(1)}50%{opacity:1;transform:scale(1.3)}}
+.bmi-bar{position:relative;display:flex;overflow:hidden;border-radius:10px;height:16px;border:1px solid #17323f}
+.bmi-seg{height:100%}
+.bmi-marker{position:absolute;top:-4px;width:2px;height:24px;background:#fff}
